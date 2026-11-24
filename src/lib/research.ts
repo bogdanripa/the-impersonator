@@ -177,6 +177,9 @@ Rules:
 - stories: concrete anecdotes the interviewee tells about something that happened (a situation, what they did, what happened). situation/action/outcome/lesson must only restate what the quote and surrounding text say.
 - Prefer fewer, stronger items over many weak ones. If nothing qualifies, return empty lists.`;
 
+/** Long documents (e.g. annual-report PDFs) are stored in full but only this much goes to the model. */
+const MODEL_TEXT_LIMIT = 400_000;
+
 export async function extractSource(sourceId: string) {
   const source = await db.query.sources.findFirst({ where: eq(schema.sources.id, sourceId) });
   if (!source) return;
@@ -211,7 +214,9 @@ export async function extractSource(sourceId: string) {
     text: { format: zodTextFormat(ExtractionSchema, "extraction") },
     input: `Persona setup:\n${icpText(icp)}\n\nSource type: ${source.tier.toUpperCase()}${
       source.tier === "anchor" ? ` (expected person: ${icp.anchor_name}, ${icp.anchor_role} at ${icp.anchor_company})` : ""
-    }${source.tier === "company" ? ` (expected company: ${icp.anchor_company})` : ""}\nExpected interviewee (unverified): ${source.claimedSubjectName ?? "unknown"}\nURL: ${source.url}\n\n<source>\n${text}\n</source>`,
+    }${source.tier === "company" ? ` (expected company: ${icp.anchor_company})` : ""}\nExpected interviewee (unverified): ${source.claimedSubjectName ?? "unknown"}\nURL: ${source.url}\n\n<source>\n${text.slice(0, MODEL_TEXT_LIMIT)}\n</source>${
+      text.length > MODEL_TEXT_LIMIT ? "\n(Document truncated for length; extract from the part shown.)" : ""
+    }`,
   });
   checkResponse(response);
   const out = response.output_parsed;

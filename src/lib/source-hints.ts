@@ -24,6 +24,7 @@ export const TRANSCRIPT_SITES = [
   "podscan.fm (partial episode transcripts for many shows)",
   "the show's own website or blog (look for a 'transcript' link on the episode page)",
   "trade press Q&As with long direct quotes: Marketing Week, The Drum, Campaign, Adweek, Ad Age, Forbes CMO Network, The Grocer",
+  "PDFs: annual reports, results presentations, earnings-call prepared remarks and transcripts (text PDFs, not scans)",
 ];
 
 export function sourceHintsText(): string {

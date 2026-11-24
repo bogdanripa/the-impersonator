@@ -3,9 +3,12 @@ import { parseHTML } from "linkedom";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { createHash } from "node:crypto";
+import { extractText, getDocumentProxy } from "unpdf";
 
 const MAX_BYTES = 5 * 1024 * 1024;
+const MAX_PDF_BYTES = 40 * 1024 * 1024; // annual reports are large
 const MAX_CHARS = 400_000;
+const MAX_PDF_CHARS = 2_000_000;
 const MIN_CHARS = 1_500;
 const TIMEOUT_MS = 20_000;
 
@@ -42,22 +45,44 @@ async function assertPublicUrl(raw: string): Promise<URL> {
   return url;
 }
 
-async function readCapped(res: Response): Promise<string> {
+async function readCapped(res: Response, maxBytes: number): Promise<Uint8Array> {
   const reader = res.body?.getReader();
-  if (!reader) return "";
+  if (!reader) return new Uint8Array();
   const chunks: Uint8Array[] = [];
   let total = 0;
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
     total += value.byteLength;
-    if (total > MAX_BYTES) {
+    if (total > maxBytes) {
       await reader.cancel();
-      throw new Error("Page is larger than 5 MB");
+      throw new Error(`File is larger than ${Math.round(maxBytes / 1024 / 1024)} MB`);
     }
     chunks.push(value);
   }
-  return new TextDecoder().decode(Buffer.concat(chunks));
+  return new Uint8Array(Buffer.concat(chunks));
+}
+
+/**
+ * Extracts a PDF's text page by page. Words split across lines with a hyphen ("mar-\nketing")
+ * are rejoined so quotes from reports can be verified verbatim.
+ */
+async function pdfToText(bytes: Uint8Array): Promise<{ title: string | null; text: string }> {
+  const pdf = await getDocumentProxy(bytes, { verbosity: 0 });
+  const { text: pages } = await extractText(pdf, { mergePages: false });
+  let title: string | null = null;
+  try {
+    const meta = await pdf.getMetadata();
+    const t = (meta.info as { Title?: unknown } | undefined)?.Title;
+    title = typeof t === "string" && t.trim() ? t.trim() : null;
+  } catch {
+    // no metadata
+  }
+  const text = pages
+    .map((p) => p.replace(/([a-z])-\s*\n\s*([a-z])/g, "$1$2").replace(/[ \t\u00a0]+/g, " ").trim())
+    .filter(Boolean)
+    .join("\n\n");
+  return { title, text };
 }
 
 function htmlToText(html: string, url: string): { title: string | null; text: string } {
@@ -100,7 +125,7 @@ export async function fetchSource(rawUrl: string): Promise<FetchedSource> {
       signal: AbortSignal.timeout(TIMEOUT_MS),
       headers: {
         "user-agent": "Mozilla/5.0 (compatible; TheImpersonatorResearch/0.1)",
-        accept: "text/html,application/xhtml+xml,text/plain;q=0.9",
+        accept: "text/html,application/xhtml+xml,application/pdf;q=0.9,text/plain;q=0.8",
       },
     });
     const location = res.headers.get("location");
@@ -112,12 +137,26 @@ export async function fetchSource(rawUrl: string): Promise<FetchedSource> {
   }
   if (!res || !res.ok) throw new Error(`HTTP ${res?.status ?? "error"} fetching page`);
   const type = res.headers.get("content-type") ?? "";
-  if (!/text\/html|application\/xhtml|text\/plain/.test(type)) throw new Error(`Unsupported content type: ${type || "unknown"}`);
-  const body = await readCapped(res);
-  const { title, text } = type.includes("text/plain") ? { title: null, text: body.trim() } : htmlToText(body, url.toString());
-  if (text.length < MIN_CHARS) {
-    throw new Error(`Only ${text.length} characters of readable text (likely paywalled, video-only or blocked)`);
+  const isPdf = /application\/pdf/.test(type) || (/application\/octet-stream/.test(type) && /\.pdf$/i.test(url.pathname));
+  if (!isPdf && !/text\/html|application\/xhtml|text\/plain/.test(type)) throw new Error(`Unsupported content type: ${type || "unknown"}`);
+  const bytes = await readCapped(res, isPdf ? MAX_PDF_BYTES : MAX_BYTES);
+  let title: string | null;
+  let text: string;
+  if (isPdf) {
+    ({ title, text } = await pdfToText(bytes).catch((err: Error) => {
+      throw new Error(`Couldn't read PDF: ${err.message}`);
+    }));
+  } else {
+    const body = new TextDecoder().decode(bytes);
+    ({ title, text } = type.includes("text/plain") ? { title: null, text: body.trim() } : htmlToText(body, url.toString()));
   }
-  const clipped = text.slice(0, MAX_CHARS);
+  if (text.length < MIN_CHARS) {
+    throw new Error(
+      isPdf
+        ? `Only ${text.length} characters of text in the PDF (likely a scanned image)`
+        : `Only ${text.length} characters of readable text (likely paywalled, video-only or blocked)`,
+    );
+  }
+  const clipped = text.slice(0, isPdf ? MAX_PDF_CHARS : MAX_CHARS);
   return { title, text: clipped, hash: createHash("sha256").update(clipped).digest("hex") };
 }
