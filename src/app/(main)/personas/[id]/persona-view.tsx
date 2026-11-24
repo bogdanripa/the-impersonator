@@ -351,7 +351,7 @@ function Conversations({ personaId, onNew }: { personaId: string; onNew: () => v
   );
 }
 
-const TABS = ["Soul", "About", "Research questions", "Profile", "Sources", "Setup"] as const;
+const TABS = ["Soul", "About", "Research questions", "Profile", "Gaps", "Sources", "Setup"] as const;
 
 function Tabs({ data, act, personaId }: { data: PersonaData; act: (fn: () => Promise<unknown>) => void; personaId: string }) {
   const [tab, setTab] = useState<(typeof TABS)[number]>(data.soul ? "Soul" : "About");
@@ -384,6 +384,7 @@ function Tabs({ data, act, personaId }: { data: PersonaData; act: (fn: () => Pro
       )}
       {tab === "Research questions" && <Answers data={data} />}
       {tab === "Profile" && <ProfileElements data={data} />}
+      {tab === "Gaps" && <GapsView data={data} act={act} personaId={personaId} />}
       {tab === "Sources" && <Sources data={data} act={act} personaId={personaId} />}
       {tab === "Setup" && data.persona.icp && <IcpCard icp={data.persona.icp} />}
     </section>
@@ -854,6 +855,86 @@ function SoulView({ data, act, personaId }: { data: PersonaData; act: (fn: () =>
           </div>
         )}
       </aside>
+    </div>
+  );
+}
+
+type Gap = {
+  id: string; question: string; note: string | null; askedBy: string | null; liveTried: boolean;
+  status: string; createdAt: string; conversationId: string | null;
+};
+
+/** What conversations couldn't answer from evidence, and one click to research it. */
+function GapsView({ data, act, personaId }: { data: PersonaData; act: (fn: () => Promise<unknown>) => void; personaId: string }) {
+  const [gaps, setGaps] = useState<Gap[] | null>(null);
+  const [reload, setReload] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    api<{ gaps: Gap[] }>(`/api/personas/${personaId}/gaps`).then(
+      (d) => !cancelled && setGaps(d.gaps),
+      () => !cancelled && setGaps([]),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [personaId, reload, data.persona.status]);
+  if (!gaps) return <p className="text-sm text-zinc-500">Loading…</p>;
+  const open = gaps.filter((g) => g.status === "open");
+  const busy = RUNNING.includes(data.persona.status);
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-zinc-200 p-3 text-sm dark:border-zinc-800">
+        <p className="min-w-0 flex-1 text-zinc-600 dark:text-zinc-400">
+          Questions from your team&apos;s conversations that the evidence didn&apos;t cover. Send them to Claude to look for public material;
+          anything found is verified and becomes a new version of the persona.
+        </p>
+        {data.deepResearchEnabled && (
+          <Button
+            disabled={!open.length || busy}
+            onClick={() =>
+              act(async () => {
+                await api(`/api/personas/${personaId}/gaps/research`, { method: "POST" });
+                setReload((n) => n + 1);
+              })
+            }
+          >
+            Research {open.length || ""} open {open.length === 1 ? "gap" : "gaps"} with Claude
+          </Button>
+        )}
+      </div>
+      {gaps.length === 0 ? (
+        <p className="text-sm text-zinc-500">No gaps yet. They appear when a conversation asks something the evidence doesn&apos;t cover.</p>
+      ) : (
+        <ul className="divide-y divide-zinc-200 overflow-hidden rounded-xl border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+          {gaps.map((g) => (
+            <li key={g.id} className="px-4 py-3 text-sm">
+              <div className="flex items-start justify-between gap-3">
+                <span className="font-medium">{g.question}</span>
+                <span
+                  className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${
+                    g.status === "open"
+                      ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                      : g.status === "researching"
+                        ? "bg-violet-500/15 text-violet-700 dark:text-violet-300"
+                        : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+                  }`}
+                >
+                  {g.status}
+                </span>
+              </div>
+              <div className="mt-1 text-xs text-zinc-500">
+                {g.askedBy ?? "someone"} · {timeAgo(g.createdAt)} · {g.liveTried ? "live lookup tried, nothing usable" : "no live lookup"}
+                {g.conversationId && (
+                  <>
+                    {" · "}
+                    <Link href={`/chat/${g.conversationId}`} className="underline">conversation</Link>
+                  </>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

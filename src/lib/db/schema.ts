@@ -362,3 +362,21 @@ export const liveEvidence = pgTable(
   },
   (t) => [index("live_evidence_conversation").on(t.conversationId)],
 );
+
+/** Questions the persona couldn't answer from evidence, collected from conversations for research. */
+export const personaGaps = pgTable(
+  "persona_gaps",
+  {
+    id: id(),
+    personaId: uuid("persona_id").notNull().references(() => personas.id, { onDelete: "cascade" }),
+    conversationId: uuid("conversation_id").references(() => conversations.id, { onDelete: "set null" }),
+    question: text("question").notNull(),
+    note: text("note"),
+    askedBy: text("asked_by"),
+    liveTried: boolean("live_tried").notNull().default(false),
+    status: text("status").notNull().default("open"), // open | researching | researched
+    runId: uuid("run_id"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("persona_gaps_persona").on(t.personaId)],
+);

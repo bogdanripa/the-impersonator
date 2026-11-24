@@ -261,6 +261,18 @@ export async function personaReply(conversationId: string, userText: string) {
       raw: JSON.stringify(out),
     })
     .returning();
+  // Log what the evidence didn't cover, so the team can send it to research.
+  const gapNotes = segments.filter((x) => x.noEvidence).map((x) => x.text);
+  if (out.evidence_gap || gapNotes.length) {
+    await db.insert(schema.personaGaps).values({
+      personaId: persona.id,
+      conversationId,
+      question: userText.slice(0, 1000),
+      note: gapNotes.join("\n\n").slice(0, 1000) || null,
+      askedBy: conversation.createdBy,
+      liveTried: lookups > 0,
+    });
+  }
   if (!conversation.title) {
     await db.update(schema.conversations).set({ title: userText.slice(0, 80) }).where(eq(schema.conversations.id, conversationId));
   }

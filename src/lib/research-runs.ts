@@ -75,4 +75,8 @@ export async function importRun(runId: string) {
   const res = await importSeedPersona(seed, checks, { personaId: persona.id, soul: false });
   const after = await db.query.personas.findFirst({ where: eq(schema.personas.id, persona.id) });
   await updateRun(run.id, { status: res.ok ? "done" : "failed", detail: after?.statusDetail ?? null });
+  await db
+    .update(schema.personaGaps)
+    .set({ status: res.ok ? "researched" : "open" })
+    .where(eq(schema.personaGaps.runId, run.id));
 }

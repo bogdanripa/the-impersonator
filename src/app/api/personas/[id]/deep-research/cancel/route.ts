@@ -17,6 +17,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/personas/[i
     const run = await latestRun(id);
     if (run && ["requested", "researching"].includes(run.status)) {
       await updateRun(run.id, { status: "failed", detail: `Cancelled by ${request.headers.get("x-user-email") ?? "a user"}` });
+      await db.update(schema.personaGaps).set({ status: "open", runId: null }).where(eq(schema.personaGaps.runId, run.id));
     } else if (run?.status === "verifying") {
       return jsonError("Claude's research is being verified and imported; it can't be cancelled now.", 409);
     }
