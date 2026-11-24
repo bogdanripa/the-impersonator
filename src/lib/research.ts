@@ -277,7 +277,10 @@ export async function extractSource(sourceId: string) {
 
   // Company material may quote the company itself or a named executive; people's sources must be their own words.
   const isSubject = (speaker: string) =>
-    isCompany ? nameKey(speaker).length > 0 : sameName(nameKey(speaker), key);
+    isCompany
+      ? companyMatches(speaker, icp.anchor_company) ||
+        (nameKey(speaker).includes(" ") && normalizedText.includes(nameKey(speaker)))
+      : sameName(nameKey(speaker), key);
 
   const goodInsights: (typeof schema.insights.$inferInsert)[] = [];
   for (const i of out.insights) {

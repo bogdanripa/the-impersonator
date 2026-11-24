@@ -149,11 +149,22 @@ export async function checkSource(source: SeedSource, icp: Icp, { cache = true }
   result.subjectOk = !result.subjectReason;
   if (!result.subjectOk) return result;
 
-  const speakerOk = (speaker: string) => (isCompany ? nameKey(speaker).length > 0 : sameName(nameKey(speaker), key));
+  // Company material may quote the company itself or a named person, but a named person must
+  // actually appear in the page text: a quote can't be attributed to someone the page doesn't name.
+  const speakerOk = (speaker: string) =>
+    isCompany
+      ? companyMatches(speaker, icp.anchor_company) || (nameKey(speaker).includes(" ") && norm.includes(nameKey(speaker)))
+      : sameName(nameKey(speaker), key);
   for (const [kind, items] of [["insights", source.insights], ["stories", source.stories]] as const) {
     for (const item of items) {
       if (!speakerOk(item.speaker)) {
-        result.rejected.push({ id: item.id, quote: item.quote, reason: `Spoken by "${item.speaker}", not ${source.subject.name}` });
+        result.rejected.push({
+          id: item.id,
+          quote: item.quote,
+          reason: isCompany
+            ? `Speaker "${item.speaker}" isn't ${icp.anchor_company} and isn't named in the page text`
+            : `Spoken by "${item.speaker}", not ${source.subject.name}`,
+        });
         continue;
       }
       const check = verifyQuote(norm, item.quote);
