@@ -26,7 +26,7 @@ export type PersonaData = {
     id: string; name: string; status: string; statusDetail: string | null; icp: Icp | null; version: number;
     summary: string | null; summaryInsightIds: string[]; summaryStoryIds: string[]; pendingIcp: Icp | null;
     tagline: string | null; hasPhoto: boolean; hasLogo: boolean; photoSourceUrl: string | null;
-    soulStatus: string | null; soulError: string | null;
+    soulStatus: string | null; soulError: string | null; queuePosition: number | null;
   };
   builder: { role: "user" | "assistant"; content: string; icp?: Icp }[];
   sources: Source[];

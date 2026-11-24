@@ -2,9 +2,13 @@ import { NextResponse } from "next/server";
 import { desc, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { handleError } from "@/lib/http";
+import { processResearchQueue, queuePositions } from "@/lib/research-queue";
 
 export async function GET() {
   try {
+    // Opportunistically keep the research queue moving.
+    await processResearchQueue().catch((err) => console.error("Research queue", err));
+    const queue = await queuePositions();
     const rows = await db
       .select({
         id: schema.personas.id,
@@ -22,7 +26,7 @@ export async function GET() {
       })
       .from(schema.personas)
       .orderBy(desc(schema.personas.updatedAt));
-    return NextResponse.json({ personas: rows });
+    return NextResponse.json({ personas: rows.map((r) => ({ ...r, queuePosition: queue.get(r.id) ?? null })) });
   } catch (err) {
     return handleError(err);
   }

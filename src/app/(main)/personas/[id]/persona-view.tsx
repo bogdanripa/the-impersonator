@@ -120,6 +120,14 @@ export default function PersonaView() {
       </div>
 
       {error && <p className="rounded border border-red-300 p-2 text-sm text-red-700">{error}</p>}
+      {persona.queuePosition && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-violet-300 px-3 py-2 text-sm dark:border-violet-900">
+          <span className="min-w-0 flex-1">
+            Queued for Claude research{persona.queuePosition > 1 ? ` (#${persona.queuePosition} in line)` : " (next up)"}. Research runs one persona
+            at a time; this starts automatically.
+          </span>
+        </div>
+      )}
       <StatusBanner data={data} act={act} personaId={id} />
       {ready && persona.soulStatus === "generating" && (
         <div className="flex items-center gap-2 rounded-lg border border-violet-300 px-3 py-2 text-sm dark:border-violet-900">

@@ -6,7 +6,7 @@ import { api } from "@/lib/api-client";
 import { StatusPill } from "@/components/ui";
 import { PersonaCard, type CardPersona } from "@/components/persona-card";
 
-type Row = CardPersona & { status: string; statusDetail: string | null; version: number; updatedAt: string };
+type Row = CardPersona & { status: string; statusDetail: string | null; version: number; updatedAt: string; queuePosition: number | null };
 
 export default function Home() {
   const [rows, setRows] = useState<Row[] | null>(null);
@@ -47,7 +47,18 @@ export default function Home() {
             {building.map((r) => (
               <li key={r.id}>
                 <Link href={`/personas/${r.id}`} className="block h-full opacity-80">
-                  <PersonaCard persona={r} aside={<StatusPill status={r.status} />} />
+                  <PersonaCard
+                    persona={r}
+                    aside={
+                      r.queuePosition ? (
+                        <span className="rounded-full bg-violet-500/15 px-2 py-0.5 text-xs font-medium text-violet-700 dark:text-violet-300">
+                          Queued #{r.queuePosition}
+                        </span>
+                      ) : (
+                        <StatusPill status={r.status} />
+                      )
+                    }
+                  />
                 </Link>
               </li>
             ))}

@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { handleError, jsonError } from "@/lib/http";
 import { latestRun, updateRun } from "@/lib/research-runs";
+import { processResearchQueue } from "@/lib/research-queue";
 
 /**
  * Cancels a stalled or failed routine run and puts the persona back where it was:
@@ -26,10 +27,12 @@ export async function POST(request: Request, ctx: RouteContext<"/api/personas/[i
       .update(schema.personas)
       .set({
         status: back,
+        queuedAt: null,
         statusDetail: back === "ready" ? "Update cancelled; this is still the previous version." : "Research cancelled. Adjust the setup or try again.",
         updatedAt: new Date(),
       })
       .where(eq(schema.personas.id, id));
+    await processResearchQueue().catch(() => null);
     return NextResponse.json({ ok: true, status: back });
   } catch (err) {
     return handleError(err);

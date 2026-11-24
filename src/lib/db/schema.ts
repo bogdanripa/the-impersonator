@@ -32,6 +32,8 @@ export const personas = pgTable("personas", {
   status: personaStatus("status").notNull().default("draft"),
   statusDetail: text("status_detail"),
   icp: jsonb("icp").$type<Icp>(),
+  /** Set while waiting in the Claude research queue (runs one at a time, oldest first). */
+  queuedAt: timestamp("queued_at", { withTimezone: true }),
   /** Revised setup from an update chat; applied only when the update research is launched. */
   pendingIcp: jsonb("pending_icp").$type<Icp>(),
   /** Transcript of the ICP builder chat (replayed to the model each turn). */

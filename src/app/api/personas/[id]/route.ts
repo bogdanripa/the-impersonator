@@ -5,6 +5,7 @@ import { handleError, jsonError } from "@/lib/http";
 import type { BuilderMessage } from "@/lib/builder";
 import { latestRun } from "@/lib/research-runs";
 import { getSoul } from "@/lib/soul";
+import { queuePositions } from "@/lib/research-queue";
 
 export async function GET(_request: Request, ctx: RouteContext<"/api/personas/[id]">) {
   try {
@@ -51,9 +52,10 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/personas/[i
 
     const run = await latestRun(id);
     const soul = persona.version > 0 ? await getSoul(id, persona.version) : null;
+    const queuePosition = persona.queuedAt ? ((await queuePositions()).get(id) ?? null) : null;
     const { builderMessages, photoData, logoData, ...rest } = persona;
     return NextResponse.json({
-      persona: { ...rest, hasPhoto: !!photoData, hasLogo: !!logoData },
+      persona: { ...rest, hasPhoto: !!photoData, hasLogo: !!logoData, queuePosition },
       builder: builderMessages as BuilderMessage[],
       sources, subjects, elements, answers, insights, stories, rejections, conversations,
       researchRun: run

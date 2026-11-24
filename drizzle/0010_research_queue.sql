@@ -1,0 +1,1 @@
+ALTER TABLE "personas" ADD COLUMN "queued_at" timestamp with time zone;

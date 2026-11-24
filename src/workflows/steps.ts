@@ -69,3 +69,9 @@ export async function soulStep(personaId: string) {
   await runSoul(personaId);
 }
 soulStep.maxRetries = 1;
+
+export async function nextInQueueStep() {
+  "use step";
+  const { processResearchQueue } = await import("@/lib/research-queue");
+  await processResearchQueue();
+}

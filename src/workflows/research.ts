@@ -5,6 +5,7 @@ import {
   importRunStep,
   runSourceCountStep,
   runStatusStep,
+  nextInQueueStep,
   soulStep,
   statusStep,
   synthesizeStep,
@@ -68,9 +69,11 @@ export async function importResearchWorkflow(runId: string, personaId: string) {
   } catch (err) {
     await runStatusStep(runId, "failed", (err as Error).message);
     await statusStep(personaId, "failed", `Importing research failed: ${(err as Error).message}`);
+    await nextInQueueStep();
     return;
   }
   await soulWithoutFailingPersona(personaId);
+  await nextInQueueStep();
 }
 
 /** Writes the persona's SOUL.md as its own step; failures are recorded and shown, not fatal. */
