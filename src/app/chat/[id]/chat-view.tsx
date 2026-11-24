@@ -19,10 +19,6 @@ type Conversation = {
   id: string; personaId: string; personaVersion: number; title: string | null; createdBy: string | null; createdAt: string;
 };
 
-function initials(name: string) {
-  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("");
-}
-
 /** Full-screen, immersive conversation with one persona. */
 export default function ChatView() {
   const { id } = useParams<{ id: string }>();

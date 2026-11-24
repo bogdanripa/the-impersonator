@@ -8,7 +8,7 @@ import type { Icp } from "@/lib/types";
 import type { PersonaData, Source } from "@/lib/client-types";
 import { Button, StatusPill, TierBadge } from "@/components/ui";
 import { buildIndex, EvidenceToggle } from "@/components/evidence";
-import { PersonaHeader } from "@/components/persona-card";
+import { CompanyLogo, PersonaPhoto } from "@/components/persona-card";
 import { Markdown } from "@/components/markdown";
 
 const RUNNING = ["discovering", "extracting", "synthesizing"];
@@ -56,56 +56,66 @@ export default function PersonaView() {
     }
   }
 
+  async function newConversation() {
+    try {
+      const { id: cid } = await api<{ id: string }>(`/api/personas/${id}/conversations`, { method: "POST" });
+      router.push(`/chat/${cid}`);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
   if (!data) return <p className="text-sm text-zinc-500">{error ?? "Loading…"}</p>;
   const { persona } = data;
+  const ready = persona.version > 0;
+  const busy = RUNNING.includes(persona.status);
+
+  const menu: MenuItem[] = [
+    ...(ready && data.deepResearchEnabled && !busy ? [{ label: "Update this persona…", onClick: () => setUpdating(true) }] : []),
+    {
+      label: "Delete persona",
+      danger: true,
+      onClick: () =>
+        confirm(`Delete "${persona.name}" and all its evidence and conversations? This can't be undone.`) &&
+        act(async () => {
+          await api(`/api/personas/${id}`, { method: "DELETE" });
+          router.push("/");
+        }),
+    },
+  ];
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <Link href="/" className="text-xs text-zinc-500 underline">← All personas</Link>
-          {persona.icp ? (
-            <div className="mt-2">
-              <PersonaHeader
-                persona={persona}
-                footer={
-                  <EvidenceToggle
-                    insightIds={persona.summaryInsightIds}
-                    storyIds={persona.summaryStoryIds}
-                    idx={buildIndex(data)}
-                    label="Show"
-                  />
-                }
-              />
+    <div className="space-y-6">
+      <Link href="/" className="text-xs text-zinc-500 hover:underline">← All personas</Link>
+
+      {/* Header: who, and the main action */}
+      <div className="flex flex-wrap items-center gap-4">
+        <PersonaPhoto persona={persona} size="lg" />
+        <div className="min-w-0 flex-1">
+          <h1 className="text-2xl font-semibold leading-tight">{persona.icp?.anchor_name ?? persona.name}</h1>
+          {persona.icp && (
+            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-sm text-zinc-500">
+              {persona.icp.anchor_role} · <CompanyLogo persona={persona} />
+              <span className="text-zinc-800 dark:text-zinc-200">{persona.icp.anchor_company}</span>
             </div>
-          ) : (
-            <h1 className="mt-1 text-2xl font-semibold">{persona.name}</h1>
           )}
-          <div className="mt-2 flex items-center gap-2 text-sm text-zinc-500">
-            <StatusPill status={persona.status} />
-            {RUNNING.includes(persona.status) && <span className="animate-pulse">●</span>}
-            <span>{persona.statusDetail}</span>
-          </div>
+          {persona.tagline && <p className="mt-1 text-sm text-zinc-700 dark:text-zinc-300">{persona.tagline}</p>}
         </div>
-        <Button
-          variant="danger"
-          onClick={() =>
-            confirm(`Delete "${persona.name}" and all its evidence and conversations? This can't be undone.`) &&
-            act(async () => {
-              await api(`/api/personas/${id}`, { method: "DELETE" });
-              router.push("/");
-            })
-          }
-        >
-          Delete
-        </Button>
+        <div className="flex items-center gap-2">
+          {ready && (
+            <button
+              onClick={newConversation}
+              className="rounded-full bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white transition hover:scale-[1.02] dark:bg-zinc-100 dark:text-zinc-900"
+            >
+              New conversation
+            </button>
+          )}
+          <Menu items={menu} />
+        </div>
       </div>
 
       {error && <p className="rounded border border-red-300 p-2 text-sm text-red-700">{error}</p>}
-
-      {persona.status !== "draft" && !updating && (
-        <DeepResearch data={data} onStart={() => setUpdating(true)} />
-      )}
+      <StatusBanner data={data} />
 
       {updating && (
         <Builder
@@ -122,7 +132,7 @@ export default function PersonaView() {
         />
       )}
 
-      {persona.status === "draft" ? (
+      {persona.status === "draft" && (
         <Builder
           data={data}
           onChange={load}
@@ -131,66 +141,192 @@ export default function PersonaView() {
             act(() => api(`/api/personas/${id}/${data.deepResearchEnabled ? "deep-research" : "research"}`, { method: "POST" }))
           }
         />
-      ) : (
-        persona.icp && <IcpCard icp={persona.icp} />
       )}
 
-      {persona.version > 0 && <Profile data={data} onStartChat={async () => {
-        try {
-          const { id: cid } = await api<{ id: string }>(`/api/personas/${id}/conversations`, { method: "POST" });
-          router.push(`/chat/${cid}`);
-        } catch (e) {
-          setError((e as Error).message);
-        }
-      }} />}
+      {ready && !updating && <Conversations personaId={id} onNew={newConversation} />}
 
-      {persona.status !== "draft" && (
-        <Sources data={data} act={act} personaId={id} />
+      {ready ? (
+        <Tabs data={data} act={act} personaId={id} />
+      ) : (
+        persona.status !== "draft" && <Sources data={data} act={act} personaId={id} />
       )}
     </div>
   );
 }
 
-const RUN_LABEL: Record<string, string> = {
-  requested: "Starting",
-  researching: "Researching",
-  verifying: "Verifying",
-  done: "Done",
-  failed: "Failed",
+type MenuItem = { label: string; onClick: () => void; danger?: boolean };
+
+function Menu({ items }: { items: MenuItem[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-label="More actions"
+        aria-expanded={open}
+        className="flex h-10 w-10 items-center justify-center rounded-full border border-zinc-300 text-lg dark:border-zinc-700"
+      >
+        ⋯
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} aria-hidden />
+          <div className="absolute right-0 z-20 mt-2 w-52 overflow-hidden rounded-lg border border-zinc-200 bg-[var(--background)] py-1 shadow-lg dark:border-zinc-800">
+            {items.map((it) => (
+              <button
+                key={it.label}
+                onClick={() => {
+                  setOpen(false);
+                  it.onClick();
+                }}
+                className={`block w-full px-3 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-900 ${it.danger ? "text-red-600" : ""}`}
+              >
+                {it.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Only shown when something is in progress or needs attention. */
+function StatusBanner({ data }: { data: PersonaData }) {
+  const { persona, researchRun: run } = data;
+  const busy = RUNNING.includes(persona.status);
+  const runActive = run && ["requested", "researching", "verifying"].includes(run.status);
+  if (!busy && !runActive && persona.status !== "failed" && persona.status !== "reviewing") return null;
+  const tone =
+    persona.status === "failed"
+      ? "border-red-300 text-red-800 dark:border-red-900 dark:text-red-300"
+      : "border-violet-300 dark:border-violet-900";
+  return (
+    <div className={`flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-sm ${tone}`}>
+      <StatusPill status={persona.status} />
+      {busy && <span className="animate-pulse">●</span>}
+      <span className="min-w-0 flex-1">{persona.statusDetail}</span>
+      {runActive && run.sessionUrl && (
+        <a href={run.sessionUrl} target="_blank" rel="noreferrer noopener" className="underline">
+          Watch Claude&apos;s session
+        </a>
+      )}
+    </div>
+  );
+}
+
+type ConversationRow = {
+  id: string; title: string | null; createdBy: string | null; createdAt: string;
+  messageCount: number; lastAt: string | null; snippet: string | null;
 };
 
-/** Deep research by the Claude routine: start it, and follow its progress. */
-function DeepResearch({ data, onStart }: { data: PersonaData; onStart: () => void }) {
-  const { persona, researchRun: run, deepResearchEnabled } = data;
-  const running = ["discovering", "extracting", "synthesizing"].includes(persona.status);
-  const active = run && ["requested", "researching", "verifying"].includes(run.status);
-  if (!persona.icp || (!deepResearchEnabled && !run)) return null;
+function timeAgo(iso: string) {
+  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  if (s < 86400 * 7) return `${Math.floor(s / 86400)}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+/** Every teammate's conversations with this persona, searchable by title, author and content. */
+function Conversations({ personaId, onNew }: { personaId: string; onNew: () => void }) {
+  const [q, setQ] = useState("");
+  const [rows, setRows] = useState<ConversationRow[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const t = setTimeout(() => {
+      api<{ conversations: ConversationRow[] }>(`/api/personas/${personaId}/conversations?q=${encodeURIComponent(q)}`).then(
+        (d) => !cancelled && setRows(d.conversations),
+        () => !cancelled && setRows([]),
+      );
+    }, q ? 250 : 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [personaId, q]);
+
   return (
-    <section className="flex flex-wrap items-center gap-3 rounded-lg border border-violet-300 p-3 text-sm dark:border-violet-900">
-      <div className="min-w-0 flex-1">
-        <div className="font-medium">Deep research with Claude</div>
-        {run ? (
-          <div className="text-zinc-500">
-            {run.mode === "update" ? "Update" : "Research"} · {RUN_LABEL[run.status] ?? run.status}
-            {run.detail ? ` · ${run.detail}` : ""}
-            {run.sessionUrl && (
-              <>
-                {" · "}
-                <a href={run.sessionUrl} target="_blank" rel="noreferrer noopener" className="underline">
-                  watch the session
-                </a>
-              </>
-            )}
-          </div>
-        ) : (
-          <div className="text-zinc-500">
-            Exhaustive, multi-round research by a Claude agent. Everything it finds is re-fetched and verified word for word here before use.
-          </div>
-        )}
+    <section className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold">Conversations</h2>
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search conversations…"
+          className="w-full max-w-xs rounded-full border border-zinc-300 bg-transparent px-4 py-1.5 text-sm dark:border-zinc-700"
+        />
       </div>
-      {deepResearchEnabled && !active && !running && persona.version > 0 && (
-        <Button onClick={onStart}>Update this persona</Button>
+      {rows === null ? (
+        <p className="text-sm text-zinc-500">Loading…</p>
+      ) : rows.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500 dark:border-zinc-700">
+          {q ? (
+            "No conversations match."
+          ) : (
+            <>
+              No conversations yet.{" "}
+              <button onClick={onNew} className="underline">Start the first one</button>.
+            </>
+          )}
+        </div>
+      ) : (
+        <ul className="divide-y divide-zinc-200 overflow-hidden rounded-xl border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+          {rows.map((c) => (
+            <li key={c.id}>
+              <Link href={`/chat/${c.id}`} className="block px-4 py-3 transition hover:bg-zinc-50 dark:hover:bg-zinc-900">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="truncate font-medium">{c.title ?? "Untitled conversation"}</span>
+                  <span className="shrink-0 text-xs text-zinc-500">{timeAgo(c.lastAt ?? c.createdAt)}</span>
+                </div>
+                {c.snippet && <p className="mt-0.5 line-clamp-1 text-sm text-zinc-500">{c.snippet.replace(/[#*|>_`]/g, "")}</p>}
+                <div className="mt-1 text-xs text-zinc-500">
+                  {c.createdBy ?? "unknown"} · {c.messageCount} messages
+                </div>
+              </Link>
+            </li>
+          ))}
+        </ul>
       )}
+    </section>
+  );
+}
+
+const TABS = ["About", "Research questions", "Profile", "Sources", "Setup"] as const;
+
+function Tabs({ data, act, personaId }: { data: PersonaData; act: (fn: () => Promise<unknown>) => void; personaId: string }) {
+  const [tab, setTab] = useState<(typeof TABS)[number]>("About");
+  const idx = useMemo(() => buildIndex(data), [data]);
+  return (
+    <section>
+      <div className="mb-4 flex gap-1 overflow-x-auto border-b border-zinc-200 dark:border-zinc-800">
+        {TABS.map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm ${
+              tab === t ? "border-zinc-900 font-medium dark:border-zinc-100" : "border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+            }`}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+      {tab === "About" && (
+        <div className="space-y-3">
+          {data.persona.summary ? <p className="leading-relaxed">{data.persona.summary}</p> : <p className="text-zinc-500">No description yet.</p>}
+          <EvidenceToggle insightIds={data.persona.summaryInsightIds} storyIds={data.persona.summaryStoryIds} idx={idx} />
+          <p className="text-xs text-zinc-500">
+            Built from {data.subjects.length} verified sources · {data.insights.length} quotes · {data.stories.length} stories ·
+            version {data.persona.version}
+          </p>
+        </div>
+      )}
+      {tab === "Research questions" && <Answers data={data} />}
+      {tab === "Profile" && <ProfileElements data={data} />}
+      {tab === "Sources" && <Sources data={data} act={act} personaId={personaId} />}
+      {tab === "Setup" && data.persona.icp && <IcpCard icp={data.persona.icp} />}
     </section>
   );
 }
@@ -376,85 +512,53 @@ const CATEGORY_LABEL: Record<string, string> = {
   language: "How they talk", history: "History",
 };
 
-function Profile({ data, onStartChat }: { data: PersonaData; onStartChat: () => void }) {
+function Answers({ data }: { data: PersonaData }) {
+  const idx = useMemo(() => buildIndex(data), [data]);
+  if (!data.answers.length) return <p className="text-sm text-zinc-500">No research questions.</p>;
+  return (
+    <ul className="space-y-3">
+      {data.answers.map((a) => (
+        <li key={a.id} className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
+          <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
+            {a.question}
+            <span className={`text-xs uppercase ${ANSWER_CLS[a.status]}`}>{a.status}</span>
+            {a.basis && <TierBadge tier={a.basis} />}
+          </div>
+          <p className="mt-1 text-sm">{a.answer ?? "Not found in any public source. The persona will say so rather than guess."}</p>
+          <EvidenceToggle insightIds={a.insightIds} storyIds={a.storyIds} idx={idx} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function ProfileElements({ data }: { data: PersonaData }) {
   const idx = useMemo(() => buildIndex(data), [data]);
   const groups = useMemo(() => {
     const m = new Map<string, typeof data.elements>();
     for (const e of data.elements) m.set(e.category, [...(m.get(e.category) ?? []), e]);
     return [...m].sort((a, b) => Object.keys(CATEGORY_LABEL).indexOf(a[0]) - Object.keys(CATEGORY_LABEL).indexOf(b[0]));
   }, [data]);
-  const discarded = data.rejections.reduce((n, r) => n + r.count, 0);
-
   return (
-    <section className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-zinc-100 p-4 dark:bg-zinc-900">
-        <div className="text-sm">
-          <div className="font-medium">Chat with {data.persona.icp?.anchor_name ?? data.persona.name}</div>
-          <div className="text-zinc-500">A simulation built only from public statements. Each conversation starts fresh.</div>
-        </div>
-        <Button onClick={onStartChat}>Start a conversation</Button>
-      </div>
-
-      {data.conversations.length > 0 && (
-        <div>
-          <h3 className="mb-1 text-sm font-medium text-zinc-500">Past conversations</h3>
-          <ul className="space-y-1 text-sm">
-            {data.conversations.map((c) => (
-              <li key={c.id}>
-                <Link href={`/chat/${c.id}`} className="underline">{c.title ?? "Untitled conversation"}</Link>
-                <span className="ml-2 text-xs text-zinc-500">{c.createdBy} · {new Date(c.createdAt).toLocaleString()}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {data.answers.length > 0 && (
-        <div>
-          <h2 className="mb-2 text-lg font-semibold">Research questions</h2>
-          <ul className="space-y-3">
-            {data.answers.map((a) => (
-              <li key={a.id} className="rounded border border-zinc-200 p-3 dark:border-zinc-800">
+    <div className="space-y-5">
+      {groups.map(([cat, els]) => (
+        <div key={cat}>
+          <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">{CATEGORY_LABEL[cat] ?? cat}</h3>
+          <ul className="space-y-2">
+            {els.map((e) => (
+              <li key={e.id} className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
                 <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
-                  {a.question}
-                  <span className={`text-xs uppercase ${ANSWER_CLS[a.status]}`}>{a.status}</span>
-                  {a.basis && <TierBadge tier={a.basis} />}
+                  {e.title} <TierBadge tier={e.basis} />
                 </div>
-                <p className="mt-1 text-sm">{a.answer ?? "Not found in any public source. The persona will say so rather than guess."}</p>
-                <EvidenceToggle insightIds={a.insightIds} storyIds={a.storyIds} idx={idx} />
+                <p className="mt-1 text-sm">{e.description}</p>
+                {e.disagreement && <p className="mt-1 text-sm text-amber-700 dark:text-amber-400">Disagreement: {e.disagreement}</p>}
+                <EvidenceToggle insightIds={e.insightIds} storyIds={e.storyIds} idx={idx} />
               </li>
             ))}
           </ul>
         </div>
-      )}
-
-      <div>
-        <h2 className="mb-2 text-lg font-semibold">Profile</h2>
-        <p className="mb-3 text-xs text-zinc-500">
-          {data.subjects.length} verified sources of evidence · {data.insights.length} quotes · {data.stories.length} stories
-          {discarded > 0 && ` · ${discarded} items discarded by the verifier`}
-        </p>
-        <div className="space-y-5">
-          {groups.map(([cat, els]) => (
-            <div key={cat}>
-              <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">{CATEGORY_LABEL[cat] ?? cat}</h3>
-              <ul className="space-y-2">
-                {els.map((e) => (
-                  <li key={e.id} className="rounded border border-zinc-200 p-3 dark:border-zinc-800">
-                    <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
-                      {e.title} <TierBadge tier={e.basis} />
-                    </div>
-                    <p className="mt-1 text-sm">{e.description}</p>
-                    {e.disagreement && <p className="mt-1 text-sm text-amber-700 dark:text-amber-400">Disagreement: {e.disagreement}</p>}
-                    <EvidenceToggle insightIds={e.insightIds} storyIds={e.storyIds} idx={idx} />
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
+      ))}
+    </div>
   );
 }
 
