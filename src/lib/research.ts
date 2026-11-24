@@ -373,7 +373,8 @@ const CodesFields = {
 
 const SynthesisSchema = z.object({
   summary: z.object({
-    text: z.string().describe("Persona card: 2-3 sentences, third person: who they are (role, company, scope) and what they focus on. Max ~60 words."),
+    text: z.string().describe("Persona profile description: 2-3 sentences, third person: who they are (role, company, scope) and what they focus on. Max ~60 words."),
+    tagline: z.string().describe("Card one-liner, max 12 words, no name or company (shown next to them): what defines how they work, e.g. 'Growth marketer who ties every marketing dollar to revenue'"),
     ...CodesFields,
   }),
   elements: z.array(
@@ -405,6 +406,7 @@ Rules:
 - Add peer elements only for topics the anchor's and company's evidence doesn't cover. A peer element describes what people in similar roles say (a pattern across several peers), never what the anchor thinks.
 - history elements about the anchor must come from the anchor's own stories. Never attribute a peer's experience to the anchor.
 - When sources disagree (including anchor vs peers), keep and describe the disagreement.
+- summary.tagline: a card one-liner (max 12 words, no name or company) condensing the same cited evidence.
 - summary: a short persona-card description (2-3 sentences, third person) stating only what ANCHOR/COMPANY evidence says about who they are and what they focus on. Cite it. Peer evidence can't support it.
 - Answer EVERY research question. Use "answered" only if ANCHOR/COMPANY evidence answers it directly; "partial" if it only partly does, or only PEER evidence speaks to it (say so in the answer); "unknown" if nothing does. "unknown" is a correct, valuable answer.
 - Think like an experienced buyer researcher: group evidence into the few dozen elements that best explain how this person thinks, decides and talks.`;
@@ -553,11 +555,19 @@ export function planSynthesis({
     };
   });
   // Persona-card summary: must rest on the anchor's or company's own evidence, else it's omitted.
-  let summary: { text: string; insightIds: string[]; storyIds: string[] } | null = null;
+  let summary: { text: string; tagline: string | null; insightIds: string[]; storyIds: string[] } | null = null;
   if (out.summary?.text.trim()) {
     const r = resolve(out.summary);
     if (r.tiers.has("anchor") || r.tiers.has("company")) {
-      summary = { text: out.summary.text.trim(), insightIds: r.insightIds, storyIds: r.storyIds };
+      const tagline = out.summary.tagline?.trim() ?? "";
+      const words = tagline.split(/\s+/).filter(Boolean).length;
+      if (tagline && words > 14) dropped.push({ item: { tagline }, reason: `Tagline too long (${words} words)` });
+      summary = {
+        text: out.summary.text.trim(),
+        tagline: tagline && words <= 14 ? tagline : null,
+        insightIds: r.insightIds,
+        storyIds: r.storyIds,
+      };
     } else {
       dropped.push({ item: out.summary, reason: "Summary must cite the anchor's or company's own evidence" });
     }
@@ -586,6 +596,7 @@ export async function saveSynthesis(args: Parameters<typeof planSynthesis>[0]) {
       .set({
         version,
         summary: summary?.text ?? null,
+        tagline: summary?.tagline ?? null,
         summaryInsightIds: summary?.insightIds ?? [],
         summaryStoryIds: summary?.storyIds ?? [],
         status: keep.length ? "ready" : "failed",

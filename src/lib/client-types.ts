@@ -24,6 +24,7 @@ export type PersonaData = {
   persona: {
     id: string; name: string; status: string; statusDetail: string | null; icp: Icp | null; version: number;
     summary: string | null; summaryInsightIds: string[]; summaryStoryIds: string[]; pendingIcp: Icp | null;
+    tagline: string | null; hasPhoto: boolean; hasLogo: boolean;
   };
   builder: { role: "user" | "assistant"; content: string; icp?: Icp }[];
   sources: Source[];

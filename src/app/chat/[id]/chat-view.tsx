@@ -8,12 +8,15 @@ import type { PersonaData } from "@/lib/client-types";
 import { buildIndex, EvidenceList, subjectTier, type EvidenceIndex } from "@/components/evidence";
 import { TierBadge } from "@/components/ui";
 import { Markdown } from "@/components/markdown";
+import { CompanyLogo, PersonaPhoto, type CardPersona } from "@/components/persona-card";
 
 type Message = {
   id: string; role: string; content: string; innerThought: string | null;
   insightIds: string[]; storyIds: string[]; ungrounded: boolean; createdAt: string;
 };
-type Conversation = { id: string; personaId: string; personaVersion: number; title: string | null };
+type Conversation = {
+  id: string; personaId: string; personaVersion: number; title: string | null; createdBy: string | null; createdAt: string;
+};
 
 function initials(name: string) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("");
@@ -31,14 +34,17 @@ export default function ChatView() {
   const [error, setError] = useState<string | null>(null);
   const [showThoughts, setShowThoughts] = useState(false);
   const [showLegend, setShowLegend] = useState(false);
+  const [canWrite, setCanWrite] = useState(true);
+  const [copied, setCopied] = useState(false);
   const scroller = useRef<HTMLElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     (async () => {
       try {
-        const c = await api<{ conversation: Conversation; messages: Message[] }>(`/api/conversations/${id}`);
+        const c = await api<{ conversation: Conversation; messages: Message[]; canWrite: boolean }>(`/api/conversations/${id}`);
         setConversation(c.conversation);
+        setCanWrite(c.canWrite);
         setMessages(c.messages);
         setPersona(await api<PersonaData>(`/api/personas/${c.conversation.personaId}`));
       } catch (e) {
@@ -110,11 +116,11 @@ export default function ChatView() {
         >
           ←
         </Link>
-        <Avatar name={name} size="md" />
+        <Avatar persona={persona.persona} size="md" />
         <div className="min-w-0 flex-1">
           <div className="truncate font-semibold leading-tight">{name}</div>
           <div className="truncate text-xs text-zinc-500">
-            {icp ? `${icp.anchor_role} · ${icp.anchor_company} · ` : ""}simulation from public statements
+            {icp ? `${icp.anchor_role} · ${icp.anchor_company}` : "Simulation from public statements"}
             {conversation && conversation.personaVersion !== persona.persona.version && " · earlier persona version"}
           </div>
         </div>
@@ -129,6 +135,21 @@ export default function ChatView() {
             aria-expanded={showLegend}
           >
             Badges
+          </button>
+          <button
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(window.location.href);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+              } catch {
+                prompt("Copy this link to share the conversation with your team:", window.location.href);
+              }
+            }}
+            title="Copy a link teammates can open (read-only)"
+            className="rounded border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-700"
+          >
+            {copied ? "Link copied" : "Share"}
           </button>
           <button onClick={newConversation} className="rounded border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-700">
             New chat
@@ -153,13 +174,18 @@ export default function ChatView() {
         <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6">
           {messages.length === 0 && !pending && (
             <div className="flex flex-col items-center pt-10 text-center">
-              <Avatar name={name} size="lg" />
+              <Avatar persona={persona.persona} size="lg" />
               <h1 className="mt-3 text-xl font-semibold">{name}</h1>
-              {icp && <p className="text-sm text-zinc-500">{icp.anchor_role} · {icp.anchor_company}</p>}
-              {persona.persona.summary && (
-                <p className="mt-3 max-w-xl text-sm text-zinc-600 dark:text-zinc-400">{persona.persona.summary}</p>
+              {icp && (
+                <p className="mt-1 flex items-center gap-1.5 text-sm text-zinc-500">
+                  {icp.anchor_role} · <CompanyLogo persona={persona.persona} /> {icp.anchor_company}
+                </p>
               )}
-              {starters.length > 0 && (
+              {(persona.persona.tagline || persona.persona.summary) && (
+                <p className="mt-3 max-w-xl text-sm text-zinc-600 dark:text-zinc-400">{persona.persona.tagline ?? persona.persona.summary}</p>
+              )}
+              <p className="mt-2 text-xs text-zinc-500">A simulation built only from public statements. This conversation starts fresh.</p>
+              {canWrite && starters.length > 0 && (
                 <div className="mt-6 grid w-full max-w-2xl gap-2 sm:grid-cols-2">
                   {starters.map((q) => (
                     <button
@@ -179,7 +205,7 @@ export default function ChatView() {
             m.role === "user" ? (
               <UserMessage key={m.id} content={m.content} />
             ) : (
-              <PersonaMessage key={m.id} m={m} idx={idx} name={name} showThoughts={showThoughts} />
+              <PersonaMessage key={m.id} m={m} idx={idx} card={persona.persona} showThoughts={showThoughts} />
             ),
           )}
 
@@ -187,7 +213,7 @@ export default function ChatView() {
             <>
               <UserMessage content={pending} />
               <div className="flex items-center gap-3 text-sm text-zinc-500">
-                <Avatar name={name} size="sm" />
+                <Avatar persona={persona.persona} size="sm" />
                 <span className="animate-pulse">{name} is thinking…</span>
               </div>
             </>
@@ -197,6 +223,17 @@ export default function ChatView() {
 
       {/* Composer */}
       <footer className="shrink-0 border-t border-zinc-200 dark:border-zinc-800">
+        {!canWrite ? (
+          <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm">
+            <span className="text-zinc-500">
+              Shared conversation{conversation?.createdBy ? ` started by ${conversation.createdBy}` : ""}
+              {conversation?.createdAt ? ` on ${new Date(conversation.createdAt).toLocaleDateString()}` : ""}. Read-only.
+            </span>
+            <button onClick={newConversation} className="rounded-lg bg-zinc-900 px-4 py-2 text-white dark:bg-zinc-100 dark:text-zinc-900">
+              Start my own conversation
+            </button>
+          </div>
+        ) : (
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -227,22 +264,15 @@ export default function ChatView() {
             Send
           </button>
         </form>
+        )}
         {error && <p className="mx-auto max-w-3xl px-4 pb-2 text-sm text-red-600">{error}</p>}
       </footer>
     </div>
   );
 }
 
-function Avatar({ name, size }: { name: string; size: "sm" | "md" | "lg" }) {
-  const cls = size === "lg" ? "h-16 w-16 text-xl" : size === "md" ? "h-9 w-9 text-sm" : "h-8 w-8 text-xs";
-  return (
-    <div
-      aria-hidden
-      className={`flex shrink-0 items-center justify-center rounded-full bg-zinc-900 font-semibold text-white dark:bg-zinc-100 dark:text-zinc-900 ${cls}`}
-    >
-      {initials(name)}
-    </div>
-  );
+function Avatar({ persona, size }: { persona: CardPersona; size: "sm" | "md" | "lg" }) {
+  return <PersonaPhoto persona={persona} size={size === "lg" ? "xl" : size} />;
 }
 
 function UserMessage({ content }: { content: string }) {
@@ -255,7 +285,7 @@ function UserMessage({ content }: { content: string }) {
   );
 }
 
-function PersonaMessage({ m, idx, name, showThoughts }: { m: Message; idx: EvidenceIndex; name: string; showThoughts: boolean }) {
+function PersonaMessage({ m, idx, card, showThoughts }: { m: Message; idx: EvidenceIndex; card: CardPersona; showThoughts: boolean }) {
   const [open, setOpen] = useState(false);
   const tiers = new Set(
     [...m.insightIds.map((i) => idx.insights.get(i)?.subjectId), ...m.storyIds.map((s) => idx.stories.get(s)?.subjectId)]
@@ -266,7 +296,7 @@ function PersonaMessage({ m, idx, name, showThoughts }: { m: Message; idx: Evide
   return (
     <div className="flex gap-3">
       <div className="mt-0.5">
-        <Avatar name={name} size="sm" />
+        <Avatar persona={card} size="sm" />
       </div>
       <div className="min-w-0 flex-1 space-y-2">
         {showThoughts && m.innerThought && (

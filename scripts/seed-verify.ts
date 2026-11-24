@@ -22,6 +22,8 @@ async function main() {
     }
     const plan = simulateSynthesis(seed, checks);
     console.log(`\nCard: ${plan.summary ? plan.summary.text : "NO VALID SUMMARY (needs anchor/company citations)"}`);
+    console.log(`Tagline: ${plan.summary?.tagline ?? "MISSING (max 12 words, in synthesis.summary.tagline)"}`);
+    console.log(`Photo: ${seed.icp.anchor_photo_url ? `${seed.icp.anchor_photo_url} (page: ${seed.icp.anchor_photo_page})` : "none"} · domain: ${seed.icp.company_domain || "none"}`);
     if (!plan.summary) problems++;
     console.log(`Synthesis: ${plan.keep.length} elements kept, ${plan.dropped.length} dropped`);
     for (const d of plan.dropped) console.log(`    ✕ ${(d.item as { title?: string; question?: string }).title ?? (d.item as { question?: string }).question}: ${d.reason}`);

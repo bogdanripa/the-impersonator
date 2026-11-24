@@ -14,6 +14,7 @@ import { fetchSource } from "@/lib/fetch-source";
 import { nameKey, normalize, verifyQuote } from "@/lib/verify";
 import { IcpSchema, type Icp } from "@/lib/types";
 import { companyMatches, planSynthesis, sameName, saveSynthesis } from "@/lib/research";
+import { refreshPersonaMedia } from "@/lib/media";
 
 const Quote = { quote: z.string(), speaker: z.string() };
 
@@ -59,12 +60,17 @@ export const ConsideredSchema = z.object({
 });
 
 export const SeedPersonaSchema = z.object({
-  icp: IcpSchema.extend({ research_focus: z.string().default("") }),
+  icp: IcpSchema.extend({
+    research_focus: z.string().default(""),
+    anchor_photo_url: z.string().default(""),
+    anchor_photo_page: z.string().default(""),
+    company_domain: z.string().default(""),
+  }),
   sources: z.array(SeedSourceSchema),
   considered: z.array(ConsideredSchema).default([]),
   searches: z.array(z.string()).default([]).describe("Search queries run, for auditing coverage"),
   synthesis: z.object({
-    summary: z.object({ text: z.string(), ...Cites }).optional(),
+    summary: z.object({ text: z.string(), tagline: z.string().default(""), ...Cites }).optional(),
     elements: z.array(
       z.object({
         category: z.enum(schema.elementCategory.enumValues),
@@ -199,7 +205,9 @@ export function simulateSynthesis(seed: SeedPersona, checks: SourceCheck[]) {
 function toSynthesisOutput(seed: SeedPersona) {
   const sum = seed.synthesis.summary;
   return {
-    summary: sum ? { text: sum.text, insight_codes: sum.insight_ids, story_codes: sum.story_ids } : { text: "", insight_codes: [], story_codes: [] },
+    summary: sum
+      ? { text: sum.text, tagline: sum.tagline, insight_codes: sum.insight_ids, story_codes: sum.story_ids }
+      : { text: "", tagline: "", insight_codes: [], story_codes: [] },
     elements: seed.synthesis.elements.map((e) => ({ ...e, insight_codes: e.insight_ids, story_codes: e.story_ids })),
     answers: seed.synthesis.answers.map((a) => ({ ...a, insight_codes: a.insight_ids, story_codes: a.story_ids })),
   };
@@ -352,5 +360,6 @@ export async function importSeedPersona(seed: SeedPersona, checks: SourceCheck[]
     return { id: persona.id, ok: false };
   }
   await saveSynthesis({ persona, subjects, iCode, sCode, out: toSynthesisOutput(seed) });
+  await refreshPersonaMedia(persona.id).catch(() => null);
   return { id: persona.id, ok: true };
 }

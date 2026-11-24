@@ -8,7 +8,7 @@ import type { Icp } from "@/lib/types";
 import type { PersonaData, Source } from "@/lib/client-types";
 import { Button, StatusPill, TierBadge } from "@/components/ui";
 import { buildIndex, EvidenceToggle } from "@/components/evidence";
-import { PersonaCard } from "@/components/persona-card";
+import { PersonaHeader } from "@/components/persona-card";
 import { Markdown } from "@/components/markdown";
 
 const RUNNING = ["discovering", "extracting", "synthesizing"];
@@ -66,7 +66,7 @@ export default function PersonaView() {
           <Link href="/" className="text-xs text-zinc-500 underline">← All personas</Link>
           {persona.icp ? (
             <div className="mt-2">
-              <PersonaCard
+              <PersonaHeader
                 persona={persona}
                 footer={
                   <EvidenceToggle

@@ -40,6 +40,14 @@ export const personas = pgTable("personas", {
   version: integer("version").notNull().default(0),
   /** Persona-card description. Only set when it cites the anchor's or company's own evidence. */
   summary: text("summary"),
+  /** One-line version of the summary for cards (same evidence rules). */
+  tagline: text("tagline"),
+  /** Official headshot and company logo, stored so cards don't depend on third-party hosts. */
+  photoData: text("photo_data"),
+  photoType: text("photo_type"),
+  photoSourceUrl: text("photo_source_url"),
+  logoData: text("logo_data"),
+  logoType: text("logo_type"),
   summaryInsightIds: jsonb("summary_insight_ids").$type<string[]>().notNull().default([]),
   summaryStoryIds: jsonb("summary_story_ids").$type<string[]>().notNull().default([]),
   createdBy: text("created_by"),

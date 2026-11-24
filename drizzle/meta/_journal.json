@@ -29,6 +29,13 @@
       "when": 1795548587367,
       "tag": "0003_pending_icp",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795550031626,
+      "tag": "0004_persona_media",
+      "breakpoints": true
     }
   ]
 }

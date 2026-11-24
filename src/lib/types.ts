@@ -11,6 +11,13 @@ export const IcpSchema = z.object({
   anchor_company: z.string().describe("Their current company"),
   anchor_linkedin_url: z.string().describe("LinkedIn profile URL seen in search results or given by the user; empty if not found"),
   identity_evidence: z.array(z.string()).describe("URLs from search results that confirm who this person is and where they work"),
+  anchor_photo_url: z
+    .string()
+    .describe("Direct URL of an official headshot image, taken from anchor_photo_page; empty if none found. Never construct one."),
+  anchor_photo_page: z
+    .string()
+    .describe("Official page (company leadership/newsroom/speaker page) that shows the photo and names the person; empty if none"),
+  company_domain: z.string().describe("The company's main website domain, e.g. diageo.com"),
   peer_role: z.string().describe("Job title(s) of similar people to use as supplementary evidence"),
   peer_seniority: z.string(),
   peer_company_profile: z.string().describe("Company size, type, revenue band, business model of similar people"),

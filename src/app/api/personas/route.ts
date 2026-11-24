@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { desc } from "drizzle-orm";
+import { desc, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { handleError } from "@/lib/http";
 
@@ -14,6 +14,9 @@ export async function GET() {
         version: schema.personas.version,
         icp: schema.personas.icp,
         summary: schema.personas.summary,
+        tagline: schema.personas.tagline,
+        hasPhoto: sql<boolean>`${schema.personas.photoData} is not null`,
+        hasLogo: sql<boolean>`${schema.personas.logoData} is not null`,
         updatedAt: schema.personas.updatedAt,
       })
       .from(schema.personas)

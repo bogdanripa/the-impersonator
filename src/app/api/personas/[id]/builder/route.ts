@@ -6,6 +6,7 @@ import { builderTurn } from "@/lib/builder";
 import { handleError, jsonError } from "@/lib/http";
 import { sameName } from "@/lib/research";
 import { nameKey } from "@/lib/verify";
+import { refreshPersonaMedia } from "@/lib/media";
 
 export const maxDuration = 300;
 
@@ -49,6 +50,8 @@ export async function POST(request: Request, ctx: RouteContext<"/api/personas/[i
         updatedAt: new Date(),
       })
       .where(eq(schema.personas.id, id));
+    // New persona: load the photo and logo for the card as soon as the setup is proposed.
+    if (proposal && !isUpdate) await refreshPersonaMedia(id).catch(() => null);
     return NextResponse.json({ reply: note ?? reply, icp: proposal });
   } catch (err) {
     return handleError(err);

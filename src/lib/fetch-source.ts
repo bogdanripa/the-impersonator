@@ -33,7 +33,7 @@ function isPrivateAddress(ip: string): boolean {
 }
 
 /** Blocks requests to internal networks (users can paste URLs, so this is an SSRF guard). */
-async function assertPublicUrl(raw: string): Promise<URL> {
+export async function assertPublicUrl(raw: string): Promise<URL> {
   const url = new URL(raw);
   if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("Only http(s) URLs are allowed");
   const host = url.hostname.replace(/^\[|\]$/g, "");

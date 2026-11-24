@@ -49,9 +49,9 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/personas/[i
     ]);
 
     const run = await latestRun(id);
-    const { builderMessages, ...rest } = persona;
+    const { builderMessages, photoData, logoData, ...rest } = persona;
     return NextResponse.json({
-      persona: rest,
+      persona: { ...rest, hasPhoto: !!photoData, hasLogo: !!logoData },
       builder: builderMessages as BuilderMessage[],
       sources, subjects, elements, answers, insights, stories, rejections, conversations,
       researchRun: run

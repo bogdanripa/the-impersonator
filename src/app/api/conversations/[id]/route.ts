@@ -3,7 +3,8 @@ import { asc, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { handleError, jsonError } from "@/lib/http";
 
-export async function GET(_request: Request, ctx: RouteContext<"/api/conversations/[id]">) {
+/** Any signed-in teammate can read a conversation; only the person who started it can continue it. */
+export async function GET(request: Request, ctx: RouteContext<"/api/conversations/[id]">) {
   try {
     const { id } = await ctx.params;
     const conversation = await db.query.conversations.findFirst({ where: eq(schema.conversations.id, id) });
@@ -17,7 +18,9 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/conversatio
       .from(schema.messages)
       .where(eq(schema.messages.conversationId, id))
       .orderBy(asc(schema.messages.createdAt));
-    return NextResponse.json({ conversation, messages });
+    const viewer = request.headers.get("x-user-email");
+    const canWrite = !conversation.createdBy || conversation.createdBy === viewer;
+    return NextResponse.json({ conversation, messages, canWrite });
   } catch (err) {
     return handleError(err);
   }

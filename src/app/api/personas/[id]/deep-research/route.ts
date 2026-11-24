@@ -4,6 +4,7 @@ import { db, schema } from "@/lib/db";
 import { handleError, jsonError } from "@/lib/http";
 import { appOrigin } from "@/lib/auth";
 import { updateRun } from "@/lib/research-runs";
+import { refreshPersonaMedia } from "@/lib/media";
 
 export const maxDuration = 60;
 
@@ -30,6 +31,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/personas/[i
         .update(schema.personas)
         .set({ icp: persona.pendingIcp, name: persona.pendingIcp.persona_name, pendingIcp: null })
         .where(eq(schema.personas.id, id));
+      await refreshPersonaMedia(id).catch(() => null);
     }
     const [run] = await db
       .insert(schema.researchRuns)
