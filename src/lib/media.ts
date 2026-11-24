@@ -1,7 +1,52 @@
 import { eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { assertPublicUrl } from "@/lib/fetch-source";
+import { parseHTML } from "linkedom";
 import { nameKey, normalize } from "@/lib/verify";
+
+/** Lowercase, accents removed, non-alphanumerics to spaces: "Pitiș" and "Pitis" compare equal. */
+function fold(v: string) {
+  return v.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+/**
+ * Picks the person's photo from a page that's about them: an image whose alt text names them, or
+ * whose file name contains their name; otherwise the page's preview image (og:image) when the
+ * page itself is about them (their name is in its URL or title).
+ */
+function findPhotoOnPage(html: string, pageUrl: URL, name: string): string | null {
+  const { document } = parseHTML(html);
+  const words = fold(name).split(" ").filter((w) => w.length > 1);
+  const surname = words.at(-1) ?? "";
+  const nameIn = (v: string | null | undefined) => {
+    const f = fold(v ?? "");
+    return !!surname && f.includes(surname) && words.filter((w) => f.includes(w)).length >= Math.min(2, words.length);
+  };
+  let best: { url: string; score: number } | null = null;
+  for (const img of document.querySelectorAll("img")) {
+    const srcset = img.getAttribute("srcset") ?? img.getAttribute("data-srcset") ?? "";
+    const src = img.getAttribute("data-src") || img.getAttribute("src") || srcset.split(",")[0]?.trim().split(" ")[0] || "";
+    if (!src || src.startsWith("data:") || src === "#") continue;
+    let score = 0;
+    if (nameIn(img.getAttribute("alt"))) score += 3;
+    if (nameIn(decodeURIComponentSafe(src.split("/").pop() ?? ""))) score += 2;
+    if (/speaker|profile|avatar|portrait|headshot|team|bio/i.test(img.getAttribute("class") ?? "")) score += 1;
+    if (score >= 2 && (!best || score > best.score)) best = { url: new URL(src, pageUrl).toString(), score };
+  }
+  if (best) return best.url;
+  const og = document.querySelector('meta[property="og:image"]')?.getAttribute("content");
+  const title = document.querySelector("title")?.textContent ?? "";
+  if (og && (nameIn(decodeURIComponentSafe(pageUrl.pathname)) || nameIn(title))) return new URL(og, pageUrl).toString();
+  return null;
+}
+
+function decodeURIComponentSafe(v: string) {
+  try {
+    return decodeURIComponent(v);
+  } catch {
+    return v;
+  }
+}
 
 const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
 
@@ -41,14 +86,10 @@ async function fetchHtml(rawUrl: string): Promise<string> {
   return (await res.text()).slice(0, 3_000_000);
 }
 
-function registrableDomain(host: string) {
-  return host.toLowerCase().replace(/^www\./, "").split(".").slice(-2).join(".");
-}
-
 /**
  * Stores the persona's official photo and company logo.
- * The photo is accepted only if its page names the person and the image is hosted on that
- * page's own site; otherwise the card falls back to initials.
+ * The photo is accepted only if it comes from a page that names the person and shows that image
+ * (official leadership, newsroom or event-speaker pages); otherwise the card shows initials.
  */
 export async function refreshPersonaMedia(personaId: string) {
   const persona = await db.query.personas.findFirst({ where: eq(schema.personas.id, personaId) });
@@ -57,25 +98,24 @@ export async function refreshPersonaMedia(personaId: string) {
   const result = { photo: "none", logo: "none" };
   const set: Partial<typeof schema.personas.$inferInsert> = {};
 
-  if (icp.anchor_photo_url && icp.anchor_photo_page) {
+  if (icp.anchor_photo_page) {
     try {
       const page = new URL(icp.anchor_photo_page);
-      const img = new URL(icp.anchor_photo_url, page);
-      if (registrableDomain(page.hostname) !== registrableDomain(img.hostname)) throw new Error("Photo isn't hosted on the page's own site");
-      // The page must name the person and reference this exact image.
+      // The page must name the person; the image must be one that this page shows.
       const html = await fetchHtml(page.toString());
-      if (!normalize(html).includes(nameKey(icp.anchor_name))) throw new Error("Photo page doesn't name the person");
-      const safeDecode = (v: string) => {
-        try {
-          return decodeURIComponent(v);
-        } catch {
-          return v;
+      const pageText = fold(html);
+      if (!fold(icp.anchor_name).split(" ").every((w) => pageText.includes(w))) throw new Error("Photo page doesn't name the person");
+      let imgUrl: string | null = null;
+      if (icp.anchor_photo_url) {
+        const img = new URL(icp.anchor_photo_url, page);
+        const paths = [img.pathname, decodeURIComponentSafe(img.pathname)];
+        if (paths.some((p) => html.includes(p) || decodeURIComponentSafe(html.replace(/%(?![0-9a-f]{2})/gi, "%25")).includes(p))) {
+          imgUrl = img.toString();
         }
-      };
-      const paths = [img.pathname, safeDecode(img.pathname)];
-      const pageHtml = [html, safeDecode(html.replace(/%(?![0-9a-f]{2})/gi, "%25"))];
-      if (!paths.some((p) => pageHtml.some((h) => h.includes(p)))) throw new Error("Photo isn't on that page");
-      const photo = await fetchImage(img.toString());
+      }
+      imgUrl ??= findPhotoOnPage(html, page, icp.anchor_name);
+      if (!imgUrl) throw new Error("No photo of the person found on that page");
+      const photo = await fetchImage(imgUrl);
       Object.assign(set, { photoData: photo.data, photoType: photo.type, photoSourceUrl: page.toString() });
       result.photo = "ok";
     } catch (err) {
