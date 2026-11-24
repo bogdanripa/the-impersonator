@@ -1,0 +1,23 @@
+[
+  {
+    "persona_name": "Jane Example, CMO at Example Corp",
+    "anchor_name": "Jane Example",
+    "anchor_role": "Chief Marketing Officer",
+    "anchor_company": "Example Corp",
+    "anchor_linkedin_url": "",
+    "identity_evidence": [],
+    "peer_role": "Chief Marketing Officer",
+    "peer_seniority": "C-level",
+    "peer_company_profile": "Fortune 500, B2C, $10B+ revenue",
+    "peer_industries": ["Consumer goods"],
+    "peer_regions": ["United States"],
+    "learning_goals": ["How they evaluate new marketing technology vendors"],
+    "research_questions": [
+      "What is their total marketing budget?",
+      "How is the budget split across buckets (brand, performance, agencies, martech, events, headcount)?",
+      "Which areas do they own personally, and which do they delegate to someone on their team?",
+      "What is their opinion on how AI is changing their world?"
+    ],
+    "exclusions": []
+  }
+]
