@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { api } from "@/lib/api-client";
 import type { PersonaData } from "@/lib/client-types";
 import { buildIndex, EvidenceList, subjectTier, type EvidenceIndex } from "@/components/evidence";
-import { Button, TierBadge } from "@/components/ui";
+import { TierBadge } from "@/components/ui";
+import { Markdown } from "@/components/markdown";
 
 type Message = {
   id: string; role: string; content: string; innerThought: string | null;
@@ -14,8 +15,14 @@ type Message = {
 };
 type Conversation = { id: string; personaId: string; personaVersion: number; title: string | null };
 
+function initials(name: string) {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("");
+}
+
+/** Full-screen, immersive conversation with one persona. */
 export default function ChatView() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [persona, setPersona] = useState<PersonaData | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -23,7 +30,9 @@ export default function ChatView() {
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showThoughts, setShowThoughts] = useState(false);
-  const bottom = useRef<HTMLDivElement>(null);
+  const [showLegend, setShowLegend] = useState(false);
+  const scroller = useRef<HTMLElement>(null);
+  const input = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     (async () => {
@@ -38,15 +47,27 @@ export default function ChatView() {
     })();
   }, [id]);
 
-  useEffect(() => bottom.current?.scrollIntoView({ behavior: "smooth" }), [messages, pending]);
+  // Scroll only the conversation pane (never the window) to the newest message.
+  useEffect(() => {
+    const el = scroller.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, [messages, pending]);
+
+  // Grow the input with its content, up to a limit.
+  useEffect(() => {
+    const el = input.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, [text]);
 
   const idx = useMemo(() => (persona ? buildIndex(persona) : null), [persona]);
   const icp = persona?.persona.icp;
+  const name = icp?.anchor_name ?? persona?.persona.name ?? "";
 
-  async function send(e: React.FormEvent) {
-    e.preventDefault();
-    if (!text.trim() || pending) return;
-    const msg = text.trim();
+  async function send(raw: string) {
+    const msg = raw.trim();
+    if (!msg || pending) return;
     setText("");
     setPending(msg);
     setError(null);
@@ -58,79 +79,184 @@ export default function ChatView() {
       setText(msg);
     } finally {
       setPending(null);
+      input.current?.focus();
     }
   }
 
-  if (!persona || !idx) return <p className="text-sm text-zinc-500">{error ?? "Loading…"}</p>;
+  async function newConversation() {
+    if (!persona) return;
+    try {
+      const { id: cid } = await api<{ id: string }>(`/api/personas/${persona.persona.id}/conversations`, { method: "POST" });
+      router.push(`/chat/${cid}`);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  if (!persona || !idx) {
+    return <div className="flex h-dvh items-center justify-center text-sm text-zinc-500">{error ?? "Loading…"}</div>;
+  }
+
+  const starters = (icp?.research_questions ?? []).slice(0, 4);
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <Link href={`/personas/${persona.persona.id}`} className="text-xs text-zinc-500 underline">← Persona profile</Link>
-          <h1 className="text-xl font-semibold">{icp?.anchor_name ?? persona.persona.name}</h1>
-          <p className="text-sm text-zinc-500">
-            {icp ? `${icp.anchor_role} at ${icp.anchor_company} · ` : ""}Simulation built only from public statements
-            {conversation && conversation.personaVersion !== persona.persona.version && " · uses an earlier version of the persona"}
-          </p>
+    <div className="fixed inset-0 flex flex-col bg-[var(--background)]">
+      {/* Top bar */}
+      <header className="flex shrink-0 items-center gap-3 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800 sm:px-4">
+        <Link
+          href={`/personas/${persona.persona.id}`}
+          className="rounded p-1 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+          aria-label="Back to profile"
+        >
+          ←
+        </Link>
+        <Avatar name={name} size="md" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate font-semibold leading-tight">{name}</div>
+          <div className="truncate text-xs text-zinc-500">
+            {icp ? `${icp.anchor_role} · ${icp.anchor_company} · ` : ""}simulation from public statements
+            {conversation && conversation.personaVersion !== persona.persona.version && " · earlier persona version"}
+          </div>
         </div>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={showThoughts} onChange={(e) => setShowThoughts(e.target.checked)} />
-          Show inner thoughts & evidence
-        </label>
-      </div>
-
-      <div className="flex flex-wrap gap-3 text-xs text-zinc-500">
-        <span className="flex items-center gap-1"><TierBadge tier="anchor" /> what they said</span>
-        <span className="flex items-center gap-1"><TierBadge tier="company" /> official company material</span>
-        <span className="flex items-center gap-1"><TierBadge tier="peer" /> similar people, never their own experience</span>
-      </div>
-
-      <div className="space-y-4">
-        {messages.length === 0 && !pending && (
-          <p className="rounded border border-dashed border-zinc-300 p-4 text-sm text-zinc-500 dark:border-zinc-700">
-            This conversation starts fresh. Ask about their priorities, budget, team, how they buy, or how AI is changing their world.
-          </p>
-        )}
-        {messages.map((m) =>
-          m.role === "user" ? (
-            <div key={m.id} className="flex justify-end">
-              <div className="max-w-[85%] whitespace-pre-wrap rounded-lg bg-zinc-900 px-3 py-2 text-sm text-white dark:bg-zinc-100 dark:text-zinc-900">
-                {m.content}
-              </div>
+        <div className="relative flex items-center gap-2">
+          <label className="hidden cursor-pointer items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400 sm:flex">
+            <input type="checkbox" checked={showThoughts} onChange={(e) => setShowThoughts(e.target.checked)} />
+            Inner thoughts
+          </label>
+          <button
+            onClick={() => setShowLegend((v) => !v)}
+            className="rounded border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-700"
+            aria-expanded={showLegend}
+          >
+            Badges
+          </button>
+          <button onClick={newConversation} className="rounded border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-700">
+            New chat
+          </button>
+          {showLegend && (
+            <div className="absolute right-0 top-9 z-10 w-72 space-y-2 rounded-lg border border-zinc-200 bg-[var(--background)] p-3 text-xs shadow-lg dark:border-zinc-800">
+              <div className="flex items-center gap-2"><TierBadge tier="anchor" /> what {name} actually said</div>
+              <div className="flex items-center gap-2"><TierBadge tier="company" /> official company material</div>
+              <div className="flex items-center gap-2"><TierBadge tier="peer" /> similar people, never their own experience</div>
+              <p className="text-zinc-500">Replies that cite no evidence are flagged as ungrounded. Each conversation starts fresh.</p>
+              <label className="flex items-center gap-2 sm:hidden">
+                <input type="checkbox" checked={showThoughts} onChange={(e) => setShowThoughts(e.target.checked)} />
+                Show inner thoughts
+              </label>
             </div>
-          ) : (
-            <PersonaMessage key={m.id} m={m} idx={idx} showThoughts={showThoughts} />
-          ),
-        )}
-        {pending && (
-          <>
-            <div className="flex justify-end">
-              <div className="max-w-[85%] whitespace-pre-wrap rounded-lg bg-zinc-900 px-3 py-2 text-sm text-white dark:bg-zinc-100 dark:text-zinc-900">
-                {pending}
-              </div>
-            </div>
-            <p className="animate-pulse text-sm text-zinc-500">{icp?.anchor_name ?? "The persona"} is thinking…</p>
-          </>
-        )}
-        <div ref={bottom} />
-      </div>
+          )}
+        </div>
+      </header>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      <form onSubmit={send} className="sticky bottom-0 flex gap-2 bg-[var(--background)] py-3">
-        <input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder={`Ask ${icp?.anchor_name ?? "them"} something…`}
-          className="flex-1 rounded border border-zinc-300 bg-transparent px-3 py-2 text-sm dark:border-zinc-700"
-        />
-        <Button type="submit" disabled={!!pending}>Send</Button>
-      </form>
+      {/* Conversation */}
+      <main ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6">
+          {messages.length === 0 && !pending && (
+            <div className="flex flex-col items-center pt-10 text-center">
+              <Avatar name={name} size="lg" />
+              <h1 className="mt-3 text-xl font-semibold">{name}</h1>
+              {icp && <p className="text-sm text-zinc-500">{icp.anchor_role} · {icp.anchor_company}</p>}
+              {persona.persona.summary && (
+                <p className="mt-3 max-w-xl text-sm text-zinc-600 dark:text-zinc-400">{persona.persona.summary}</p>
+              )}
+              {starters.length > 0 && (
+                <div className="mt-6 grid w-full max-w-2xl gap-2 sm:grid-cols-2">
+                  {starters.map((q) => (
+                    <button
+                      key={q}
+                      onClick={() => send(q)}
+                      className="rounded-lg border border-zinc-200 p-3 text-left text-sm hover:bg-zinc-100 dark:border-zinc-800 dark:hover:bg-zinc-900"
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {messages.map((m) =>
+            m.role === "user" ? (
+              <UserMessage key={m.id} content={m.content} />
+            ) : (
+              <PersonaMessage key={m.id} m={m} idx={idx} name={name} showThoughts={showThoughts} />
+            ),
+          )}
+
+          {pending && (
+            <>
+              <UserMessage content={pending} />
+              <div className="flex items-center gap-3 text-sm text-zinc-500">
+                <Avatar name={name} size="sm" />
+                <span className="animate-pulse">{name} is thinking…</span>
+              </div>
+            </>
+          )}
+        </div>
+      </main>
+
+      {/* Composer */}
+      <footer className="shrink-0 border-t border-zinc-200 dark:border-zinc-800">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            send(text);
+          }}
+          className="mx-auto flex w-full max-w-3xl items-end gap-2 px-4 py-3"
+        >
+          <textarea
+            ref={input}
+            rows={1}
+            value={text}
+            autoFocus
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                send(text);
+              }
+            }}
+            placeholder={`Message ${name}…`}
+            className="max-h-[200px] flex-1 resize-none rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm leading-relaxed dark:border-zinc-700"
+          />
+          <button
+            type="submit"
+            disabled={!!pending || !text.trim()}
+            className="rounded-lg bg-zinc-900 px-4 py-2 text-sm text-white disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900"
+          >
+            Send
+          </button>
+        </form>
+        {error && <p className="mx-auto max-w-3xl px-4 pb-2 text-sm text-red-600">{error}</p>}
+      </footer>
     </div>
   );
 }
 
-function PersonaMessage({ m, idx, showThoughts }: { m: Message; idx: EvidenceIndex; showThoughts: boolean }) {
+function Avatar({ name, size }: { name: string; size: "sm" | "md" | "lg" }) {
+  const cls = size === "lg" ? "h-16 w-16 text-xl" : size === "md" ? "h-9 w-9 text-sm" : "h-8 w-8 text-xs";
+  return (
+    <div
+      aria-hidden
+      className={`flex shrink-0 items-center justify-center rounded-full bg-zinc-900 font-semibold text-white dark:bg-zinc-100 dark:text-zinc-900 ${cls}`}
+    >
+      {initials(name)}
+    </div>
+  );
+}
+
+function UserMessage({ content }: { content: string }) {
+  return (
+    <div className="flex justify-end">
+      <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl bg-zinc-900 px-4 py-2 text-sm text-white dark:bg-zinc-100 dark:text-zinc-900">
+        {content}
+      </div>
+    </div>
+  );
+}
+
+function PersonaMessage({ m, idx, name, showThoughts }: { m: Message; idx: EvidenceIndex; name: string; showThoughts: boolean }) {
+  const [open, setOpen] = useState(false);
   const tiers = new Set(
     [...m.insightIds.map((i) => idx.insights.get(i)?.subjectId), ...m.storyIds.map((s) => idx.stories.get(s)?.subjectId)]
       .filter((x): x is string => !!x)
@@ -138,34 +264,37 @@ function PersonaMessage({ m, idx, showThoughts }: { m: Message; idx: EvidenceInd
   );
   const n = m.insightIds.length + m.storyIds.length;
   return (
-    <div className="flex justify-start">
-      <div className="max-w-[85%] space-y-2">
-        <div className="whitespace-pre-wrap rounded-lg bg-zinc-100 px-3 py-2 text-sm dark:bg-zinc-900">{m.content}</div>
+    <div className="flex gap-3">
+      <div className="mt-0.5">
+        <Avatar name={name} size="sm" />
+      </div>
+      <div className="min-w-0 flex-1 space-y-2">
+        {showThoughts && m.innerThought && (
+          <div className="rounded-lg border border-dashed border-zinc-300 px-3 py-2 text-sm italic text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
+            <span className="font-medium not-italic">Thinking: </span>
+            {m.innerThought}
+          </div>
+        )}
+        <div className="text-[15px]">
+          <Markdown>{m.content}</Markdown>
+        </div>
         <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
           {m.ungrounded ? (
             <span className="rounded bg-red-100 px-1.5 py-0.5 font-medium text-red-700 dark:bg-red-950 dark:text-red-300">
               ⚠ Ungrounded: cites no evidence. Don&apos;t treat as fact.
             </span>
           ) : n === 0 ? (
-            <span>No evidence on this topic. The persona said so.</span>
+            <span>No public evidence on this; they said so.</span>
           ) : (
-            <>
-              <span>Grounded in {n} {n === 1 ? "quote" : "quotes"}</span>
+            <button onClick={() => setOpen((v) => !v)} className="flex items-center gap-2 hover:text-zinc-900 dark:hover:text-zinc-100">
+              <span className="underline underline-offset-2">
+                {open ? "Hide" : "Grounded in"} {n} {n === 1 ? "quote" : "quotes"}
+              </span>
               {[...tiers].map((t) => <TierBadge key={t} tier={t} />)}
-            </>
+            </button>
           )}
         </div>
-        {showThoughts && (
-          <div className="rounded border border-dashed border-zinc-300 p-2 text-sm dark:border-zinc-700">
-            {m.innerThought && (
-              <p className="italic text-zinc-600 dark:text-zinc-400">
-                <span className="not-italic font-medium">Inner thought: </span>
-                {m.innerThought}
-              </p>
-            )}
-            <EvidenceList insightIds={m.insightIds} storyIds={m.storyIds} idx={idx} />
-          </div>
-        )}
+        {open && <EvidenceList insightIds={m.insightIds} storyIds={m.storyIds} idx={idx} />}
       </div>
     </div>
   );

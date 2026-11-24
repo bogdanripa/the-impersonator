@@ -1,50 +1,32 @@
 /**
- * Seeds personas from a local, git-ignored JSON file (an array of persona setups).
- * Usage: npm run seed -- seeds/personas.json
+ * Seeds researched personas from a local, git-ignored JSON file.
+ * Every quote is re-verified against the page text before anything is written.
+ * Usage: npm run seed -- seeds/<file>.json [--replace]
  */
-import { readFileSync } from "node:fs";
-import { and, sql } from "drizzle-orm";
-import { z } from "zod";
+import { eq } from "drizzle-orm";
 import { db, schema } from "../src/lib/db";
-import { IcpSchema } from "../src/lib/types";
+import { checkSource, findExistingPersona, importSeedPersona, loadSeedFile } from "../src/lib/seed";
 
 async function main() {
   const file = process.argv[2];
-  if (!file) throw new Error("Usage: npm run seed -- <path-to-seed.json>");
-  const setups = z.array(IcpSchema).parse(JSON.parse(readFileSync(file, "utf8")));
-
-  for (const icp of setups) {
-    const existing = await db
-      .select({ id: schema.personas.id })
-      .from(schema.personas)
-      .where(
-        and(
-          sql`lower(${schema.personas.icp}->>'anchor_name') = lower(${icp.anchor_name})`,
-          sql`lower(${schema.personas.icp}->>'anchor_company') = lower(${icp.anchor_company})`,
-        ),
-      );
-    if (existing.length) {
-      console.log(`skip   ${icp.persona_name} (already exists)`);
+  if (!file) throw new Error("Usage: npm run seed -- <seed.json> [--replace]");
+  const replace = process.argv.includes("--replace");
+  for (const seed of loadSeedFile(file)) {
+    const existing = await findExistingPersona(seed.icp);
+    if (existing.length && !replace) {
+      console.log(`skip   ${seed.icp.persona_name} (exists; use --replace)`);
       continue;
     }
-    const [row] = await db
-      .insert(schema.personas)
-      .values({
-        name: icp.persona_name,
-        icp,
-        createdBy: "seed",
-        builderMessages: [
-          { role: "assistant", content: "This persona was seeded. Review the setup, then confirm it to start research.", icp },
-        ],
-      })
-      .returning({ id: schema.personas.id });
-    console.log(`create ${icp.persona_name} → /personas/${row.id}`);
+    for (const e of existing) await db.delete(schema.personas).where(eq(schema.personas.id, e.id));
+    const checks = [];
+    for (const s of seed.sources) checks.push(await checkSource(s, seed.icp));
+    const res = await importSeedPersona(seed, checks);
+    const persona = await db.query.personas.findFirst({ where: eq(schema.personas.id, res.id) });
+    console.log(`${res.ok ? "create" : "FAILED"} ${seed.icp.persona_name} → /personas/${res.id}\n       ${persona?.statusDetail ?? ""}`);
   }
 }
 
-main()
-  .then(() => process.exit(0))
-  .catch((err) => {
-    console.error(err);
-    process.exit(1);
-  });
+main().then(() => process.exit(0), (err) => {
+  console.error(err);
+  process.exit(1);
+});

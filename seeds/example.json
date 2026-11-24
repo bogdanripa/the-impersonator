@@ -1,23 +1,68 @@
 [
   {
-    "persona_name": "Jane Example, CMO at Example Corp",
-    "anchor_name": "Jane Example",
-    "anchor_role": "Chief Marketing Officer",
-    "anchor_company": "Example Corp",
-    "anchor_linkedin_url": "",
-    "identity_evidence": [],
-    "peer_role": "Chief Marketing Officer",
-    "peer_seniority": "C-level",
-    "peer_company_profile": "Fortune 500, B2C, $10B+ revenue",
-    "peer_industries": ["Consumer goods"],
-    "peer_regions": ["United States"],
-    "learning_goals": ["How they evaluate new marketing technology vendors"],
-    "research_questions": [
-      "What is their total marketing budget?",
-      "How is the budget split across buckets (brand, performance, agencies, martech, events, headcount)?",
-      "Which areas do they own personally, and which do they delegate to someone on their team?",
-      "What is their opinion on how AI is changing their world?"
+    "icp": {
+      "persona_name": "Jane Example, CMO at Example Corp",
+      "anchor_name": "Jane Example",
+      "anchor_role": "Chief Marketing Officer",
+      "anchor_company": "Example Corp",
+      "anchor_linkedin_url": "",
+      "identity_evidence": ["https://example.com/leadership/jane-example"],
+      "peer_role": "Chief Marketing Officer",
+      "peer_seniority": "C-level",
+      "peer_company_profile": "Fortune 500, B2C, $10B+ revenue",
+      "peer_industries": ["Consumer goods"],
+      "peer_regions": ["United States"],
+      "learning_goals": ["How they evaluate new marketing technology vendors"],
+      "research_questions": ["What is their total marketing budget?", "What is their opinion on how AI is changing their world?"],
+      "exclusions": []
+    },
+    "sources": [
+      {
+        "id": "a1",
+        "url": "https://example.com/interviews/jane-example",
+        "tier": "anchor",
+        "title": "Interview with Jane Example",
+        "publisher": "Example Media",
+        "published_at": "2026",
+        "subject": {
+          "name": "Jane Example",
+          "role": "Chief Marketing Officer",
+          "organization": "Example Corp",
+          "identity_quote": "Jane Example, chief marketing officer at Example Corp, joined us to talk about AI."
+        },
+        "insights": [
+          {
+            "id": "a1-i1",
+            "kind": "opinion",
+            "summary": "She sees AI mainly as a speed advantage for creative production.",
+            "quote": "AI has cut the time it takes us to produce a campaign from weeks to days.",
+            "speaker": "Jane Example"
+          }
+        ],
+        "stories": []
+      }
     ],
-    "exclusions": []
+    "synthesis": {
+      "elements": [
+        {
+          "category": "opinion",
+          "title": "AI as a speed advantage",
+          "description": "She says AI cut campaign production from weeks to days.",
+          "disagreement": "",
+          "insight_ids": ["a1-i1"],
+          "story_ids": []
+        }
+      ],
+      "answers": [
+        { "question": "What is their total marketing budget?", "status": "unknown", "answer": "", "insight_ids": [], "story_ids": [] },
+        {
+          "question": "What is their opinion on how AI is changing their world?",
+          "status": "answered",
+          "answer": "She says AI cut campaign production from weeks to days.",
+          "insight_ids": ["a1-i1"],
+          "story_ids": []
+        }
+      ]
+    }
   }
 ]

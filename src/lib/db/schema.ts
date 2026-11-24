@@ -32,10 +32,16 @@ export const personas = pgTable("personas", {
   status: personaStatus("status").notNull().default("draft"),
   statusDetail: text("status_detail"),
   icp: jsonb("icp").$type<Icp>(),
+  /** Revised setup from an update chat; applied only when the update research is launched. */
+  pendingIcp: jsonb("pending_icp").$type<Icp>(),
   /** Transcript of the ICP builder chat (replayed to the model each turn). */
   builderMessages: jsonb("builder_messages").$type<unknown[]>().notNull().default([]),
   /** Incremented every time the persona is re-synthesized. */
   version: integer("version").notNull().default(0),
+  /** Persona-card description. Only set when it cites the anchor's or company's own evidence. */
+  summary: text("summary"),
+  summaryInsightIds: jsonb("summary_insight_ids").$type<string[]>().notNull().default([]),
+  summaryStoryIds: jsonb("summary_story_ids").$type<string[]>().notNull().default([]),
   createdBy: text("created_by"),
   createdAt: createdAt(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -256,4 +262,39 @@ export const messages = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index("messages_conversation").on(t.conversationId)],
+);
+
+/**
+ * A deep-research run by the Claude routine. The routine never writes to the database directly:
+ * it submits its research here, and the app re-fetches and re-verifies everything before import.
+ */
+export const researchRuns = pgTable(
+  "research_runs",
+  {
+    id: id(),
+    personaId: uuid("persona_id").notNull().references(() => personas.id, { onDelete: "cascade" }),
+    mode: text("mode").notNull(), // new | update
+    status: text("status").notNull().default("requested"), // requested | researching | verifying | done | failed
+    detail: text("detail"),
+    sessionUrl: text("session_url"),
+    /** The submitted research (seed format). */
+    submission: jsonb("submission"),
+    requestedBy: text("requested_by"),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("research_runs_persona").on(t.personaId)],
+);
+
+/** Server-side verification result for one submitted source (kept out of workflow payloads). */
+export const researchChecks = pgTable(
+  "research_checks",
+  {
+    id: id(),
+    runId: uuid("run_id").notNull().references(() => researchRuns.id, { onDelete: "cascade" }),
+    sourceIndex: integer("source_index").notNull(),
+    result: jsonb("result").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("research_checks_run_source").on(t.runId, t.sourceIndex)],
 );

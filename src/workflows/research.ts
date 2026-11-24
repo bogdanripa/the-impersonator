@@ -1,4 +1,14 @@
-import { approvedStep, discoverStep, extractStep, statusStep, synthesizeStep } from "./steps";
+import {
+  approvedStep,
+  discoverStep,
+  extractStep,
+  importRunStep,
+  runSourceCountStep,
+  runStatusStep,
+  statusStep,
+  synthesizeStep,
+  verifyRunSourceStep,
+} from "./steps";
 
 /** Finds the person's own material and peer interviews, then hands over to the user for review. */
 export async function discoverWorkflow(personaId: string) {
@@ -32,5 +42,28 @@ export async function extractWorkflow(personaId: string) {
     await synthesizeStep(personaId);
   } catch (err) {
     await statusStep(personaId, "failed", `Research failed: ${(err as Error).message}`);
+  }
+}
+
+/**
+ * Imports research submitted by the Claude routine. Every source is re-fetched by our server
+ * and every quote re-verified (in parallel batches) before anything reaches the persona.
+ */
+export async function importResearchWorkflow(runId: string, personaId: string) {
+  "use workflow";
+  try {
+    const count = await runSourceCountStep(runId);
+    await runStatusStep(runId, "verifying", `Re-fetching and verifying ${count} sources…`);
+    await statusStep(personaId, "extracting", `Verifying Claude's research: ${count} sources…`);
+    const BATCH = 8;
+    for (let start = 0; start < count; start += BATCH) {
+      const batch = Array.from({ length: Math.min(BATCH, count - start) }, (_, i) => start + i);
+      await Promise.allSettled(batch.map((i) => verifyRunSourceStep(runId, i)));
+    }
+    await statusStep(personaId, "synthesizing", "Building the persona from verified evidence…");
+    await importRunStep(runId);
+  } catch (err) {
+    await runStatusStep(runId, "failed", (err as Error).message);
+    await statusStep(personaId, "failed", `Importing research failed: ${(err as Error).message}`);
   }
 }

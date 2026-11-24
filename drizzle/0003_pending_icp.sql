@@ -1,0 +1,1 @@
+ALTER TABLE "personas" ADD COLUMN "pending_icp" jsonb;

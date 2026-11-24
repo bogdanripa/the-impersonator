@@ -23,5 +23,8 @@ export const IcpSchema = z.object({
       "Specific things the persona must know or have a view on, phrased as questions. E.g. for a marketing leader: total marketing budget; how it splits across buckets (brand, performance, agencies, martech, events, headcount); which areas they own personally vs delegate to someone on their team; their opinion on how AI is changing their world",
     ),
   exclusions: z.array(z.string()).describe("People or source types to exclude"),
+  research_focus: z
+    .string()
+    .describe("What the next research run should focus on (e.g. 'newer interviews since 2025; budget split; AI'). Empty for a first run if there's nothing specific."),
 });
 export type Icp = z.infer<typeof IcpSchema>;

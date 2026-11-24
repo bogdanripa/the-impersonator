@@ -309,14 +309,14 @@ export async function extractSource(sourceId: string) {
 }
 
 /** Company names match if the most distinctive word of the expected name appears. */
-function companyMatches(found: string, expected: string): boolean {
+export function companyMatches(found: string, expected: string): boolean {
   const words = normalize(expected).split(" ").filter((w) => !["the", "inc", "corp", "corporation", "company", "co", "ltd", "plc", "group", "llc"].includes(w));
   const key = words.sort((a, b) => b.length - a.length)[0];
   return !!key && normalize(found).includes(key);
 }
 
 /** Same person if the full names match, or one is the other's surname / "First Last" subset. */
-function sameName(a: string, b: string): boolean {
+export function sameName(a: string, b: string): boolean {
   if (!a || !b) return false;
   if (a === b) return true;
   const aw = a.split(" "), bw = b.split(" ");
@@ -364,6 +364,10 @@ const CodesFields = {
 };
 
 const SynthesisSchema = z.object({
+  summary: z.object({
+    text: z.string().describe("Persona card: 2-3 sentences, third person: who they are (role, company, scope) and what they focus on. Max ~60 words."),
+    ...CodesFields,
+  }),
   elements: z.array(
     z.object({
       category: z.enum(schema.elementCategory.enumValues),
@@ -393,6 +397,7 @@ Rules:
 - Add peer elements only for topics the anchor's and company's evidence doesn't cover. A peer element describes what people in similar roles say (a pattern across several peers), never what the anchor thinks.
 - history elements about the anchor must come from the anchor's own stories. Never attribute a peer's experience to the anchor.
 - When sources disagree (including anchor vs peers), keep and describe the disagreement.
+- summary: a short persona-card description (2-3 sentences, third person) stating only what ANCHOR/COMPANY evidence says about who they are and what they focus on. Cite it. Peer evidence can't support it.
 - Answer EVERY research question. Use "answered" only if ANCHOR/COMPANY evidence answers it directly; "partial" if it only partly does, or only PEER evidence speaks to it (say so in the answer); "unknown" if nothing does. "unknown" is a correct, valuable answer.
 - Think like an experienced buyer researcher: group evidence into the few dozen elements that best explain how this person thinks, decides and talks.`;
 
@@ -452,6 +457,36 @@ export async function synthesize(personaId: string) {
   const out = response.output_parsed;
   if (!out) throw new Error("Synthesis returned no parsable output");
 
+  await saveSynthesis({ persona, subjects, iCode, sCode, out });
+}
+
+export type SynthesisOutput = z.infer<typeof SynthesisSchema>;
+type Row<T extends { $inferSelect: unknown }> = T["$inferSelect"];
+
+/**
+ * Validates a synthesis against the evidence rules and stores it as the next persona version.
+ * Shared by the in-app pipeline and the offline seed importer, so both enforce the same rules.
+ * `iCode` / `sCode` map whatever codes the synthesis cites to verified insight/story rows.
+ */
+export function planSynthesis({
+  persona,
+  subjects,
+  iCode,
+  sCode,
+  out,
+}: {
+  persona: Row<typeof schema.personas>;
+  subjects: Row<typeof schema.subjects>[];
+  iCode: Map<string, Row<typeof schema.insights>>;
+  sCode: Map<string, Row<typeof schema.stories>>;
+  out: SynthesisOutput;
+}) {
+  const personaId = persona.id;
+  const icp = persona.icp!;
+  const tierOf = (subjectId: string) => {
+    const s = subjects.find((x) => x.id === subjectId);
+    return s?.isAnchor ? "anchor" : s?.kind === "company" ? "company" : "peer";
+  };
   const resolve = (item: { insight_codes: string[]; story_codes: string[] }) => {
     const ins = item.insight_codes.map((c) => iCode.get(c.trim())).filter((x) => !!x);
     const sts = item.story_codes.map((c) => sCode.get(c.trim())).filter((x) => !!x);
@@ -509,7 +544,25 @@ export async function synthesize(personaId: string) {
       answer: a.answer, basis: r.basis, insightIds: r.insightIds, storyIds: r.storyIds,
     };
   });
+  // Persona-card summary: must rest on the anchor's or company's own evidence, else it's omitted.
+  let summary: { text: string; insightIds: string[]; storyIds: string[] } | null = null;
+  if (out.summary?.text.trim()) {
+    const r = resolve(out.summary);
+    if (r.tiers.has("anchor") || r.tiers.has("company")) {
+      summary = { text: out.summary.text.trim(), insightIds: r.insightIds, storyIds: r.storyIds };
+    } else {
+      dropped.push({ item: out.summary, reason: "Summary must cite the anchor's or company's own evidence" });
+    }
+  }
 
+  return { keep, answers, dropped, summary };
+}
+
+export async function saveSynthesis(args: Parameters<typeof planSynthesis>[0]) {
+  const { persona, subjects } = args;
+  const personaId = persona.id;
+  const { keep, answers, dropped, summary } = planSynthesis(args);
+  const version = persona.version + 1;
   await db.transaction(async (tx) => {
     if (keep.length) await tx.insert(schema.personaElements).values(keep);
     if (answers.length) await tx.insert(schema.researchAnswers).values(answers);
@@ -524,6 +577,9 @@ export async function synthesize(personaId: string) {
       .update(schema.personas)
       .set({
         version,
+        summary: summary?.text ?? null,
+        summaryInsightIds: summary?.insightIds ?? [],
+        summaryStoryIds: summary?.storyIds ?? [],
         status: keep.length ? "ready" : "failed",
         statusDetail: keep.length
           ? `${keep.length} profile elements from ${subjects.length} sources; ${answered}/${answers.length} research questions answered from their own or company material; ${dropped.length} unsupported items discarded`

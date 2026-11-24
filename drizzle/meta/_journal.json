@@ -8,6 +8,27 @@
       "when": 1795545921748,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1795547838020,
+      "tag": "0001_persona_card",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795548454478,
+      "tag": "0002_research_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1795548587367,
+      "tag": "0003_pending_icp",
+      "breakpoints": true
     }
   ]
 }

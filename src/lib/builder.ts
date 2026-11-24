@@ -23,6 +23,7 @@ Your job:
 - Ask what the user wants to learn from this persona, and turn it into concrete research_questions: the facts the persona must know and the topics they must have a view on.
   Suggest good ones for the role. For a marketing leader, for example: total marketing budget; how it splits across buckets (brand, performance, agencies, martech, events, headcount); which areas they own personally vs delegate, and to whom; how their team is structured; their opinion on how AI is changing their world.
   Be honest that private facts like budgets are only knowable if they've been stated publicly (by the person, in company filings, earnings calls or press). Otherwise the persona will say it's unknown rather than guess, and may only offer what peers say.
+- Set research_focus to anything specific the research run should prioritise (or leave it empty).
 - When everything is confirmed, call propose_icp. Put the URLs that confirmed the person's identity in identity_evidence. Don't also write it out in prose, since the app shows it as a card. Propose a revised version whenever the user asks for changes.
 Keep replies short.`;
 
@@ -32,11 +33,20 @@ const proposeIcp = zodResponsesFunction({
   parameters: IcpSchema,
 });
 
-export async function builderTurn(history: BuilderMessage[], userText: string) {
+const UPDATE_INSTRUCTIONS = `
+This persona ALREADY EXISTS and has been researched (the current setup is below). The user now wants to UPDATE it.
+- Discuss what should change: new or sharper research questions, a focus for the next research run (e.g. newer interviews, the latest annual report, a topic like agencies or AI), or a different peer profile.
+- The anchor person cannot change. If the user wants someone else, tell them to create a new persona instead.
+- When the update is clear, call propose_icp with the FULL revised setup (unchanged fields copied as-is) and a concrete research_focus.
+
+Current setup:
+`;
+
+export async function builderTurn(history: BuilderMessage[], userText: string, current?: Icp | null) {
   const messages: BuilderMessage[] = [...history, { role: "user", content: userText }];
   const response = await llm().responses.parse({
     model: MODEL,
-    instructions: INSTRUCTIONS,
+    instructions: current ? `${INSTRUCTIONS}\n${UPDATE_INSTRUCTIONS}${JSON.stringify(current, null, 2)}` : INSTRUCTIONS,
     reasoning: { effort: "low" },
     tools: [{ type: "web_search" }, proposeIcp],
     input: messages.map((m) => ({

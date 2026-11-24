@@ -12,6 +12,8 @@ export async function GET() {
         status: schema.personas.status,
         statusDetail: schema.personas.statusDetail,
         version: schema.personas.version,
+        icp: schema.personas.icp,
+        summary: schema.personas.summary,
         updatedAt: schema.personas.updatedAt,
       })
       .from(schema.personas)

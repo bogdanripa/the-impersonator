@@ -5,8 +5,13 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api-client";
 import { StatusPill } from "@/components/ui";
+import { PersonaCard } from "@/components/persona-card";
+import type { Icp } from "@/lib/types";
 
-type Row = { id: string; name: string; status: string; statusDetail: string | null; version: number; updatedAt: string };
+type Row = {
+  id: string; name: string; status: string; statusDetail: string | null; version: number; updatedAt: string;
+  icp: Icp | null; summary: string | null;
+};
 
 export default function Home() {
   const router = useRouter();
@@ -54,12 +59,11 @@ export default function Home() {
           <h2 className="text-lg font-semibold">2. Chat with ICP</h2>
           <p className="mt-1 text-sm text-zinc-500">Every reply shows the real quotes it rests on. Each conversation starts fresh.</p>
           {rows && ready.length === 0 && <p className="mt-4 text-sm text-zinc-500">No ready personas yet.</p>}
-          <ul className="mt-3 space-y-2">
+          <ul className="mt-3 space-y-3">
             {ready.map((r) => (
               <li key={r.id}>
-                <Link href={`/personas/${r.id}`} className="flex items-center justify-between rounded border border-zinc-200 px-3 py-2 text-sm hover:bg-zinc-100 dark:border-zinc-800 dark:hover:bg-zinc-900">
-                  <span>{r.name}</span>
-                  <StatusPill status={r.status} />
+                <Link href={`/personas/${r.id}`} className="block rounded-lg transition hover:bg-zinc-100 dark:hover:bg-zinc-900">
+                  <PersonaCard persona={r} aside={<StatusPill status={r.status} />} />
                 </Link>
               </li>
             ))}

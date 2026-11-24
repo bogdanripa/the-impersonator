@@ -3,6 +3,7 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { handleError, jsonError } from "@/lib/http";
 import type { BuilderMessage } from "@/lib/builder";
+import { latestRun } from "@/lib/research-runs";
 
 export async function GET(_request: Request, ctx: RouteContext<"/api/personas/[id]">) {
   try {
@@ -47,11 +48,16 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/personas/[i
         .where(and(eq(schema.researchAnswers.personaId, id), eq(schema.researchAnswers.version, persona.version))),
     ]);
 
+    const run = await latestRun(id);
     const { builderMessages, ...rest } = persona;
     return NextResponse.json({
       persona: rest,
       builder: builderMessages as BuilderMessage[],
       sources, subjects, elements, answers, insights, stories, rejections, conversations,
+      researchRun: run
+        ? { id: run.id, mode: run.mode, status: run.status, detail: run.detail, sessionUrl: run.sessionUrl, createdAt: run.createdAt }
+        : null,
+      deepResearchEnabled: !!(process.env.CLAUDE_ROUTINE_FIRE_URL && process.env.CLAUDE_ROUTINE_TOKEN),
     });
   } catch (err) {
     return handleError(err);

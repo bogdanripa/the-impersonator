@@ -21,7 +21,10 @@ export type Answer = {
   insightIds: string[]; storyIds: string[];
 };
 export type PersonaData = {
-  persona: { id: string; name: string; status: string; statusDetail: string | null; icp: Icp | null; version: number };
+  persona: {
+    id: string; name: string; status: string; statusDetail: string | null; icp: Icp | null; version: number;
+    summary: string | null; summaryInsightIds: string[]; summaryStoryIds: string[]; pendingIcp: Icp | null;
+  };
   builder: { role: "user" | "assistant"; content: string; icp?: Icp }[];
   sources: Source[];
   subjects: Subject[];
@@ -31,4 +34,6 @@ export type PersonaData = {
   stories: Story[];
   rejections: { stage: string; count: number }[];
   conversations: { id: string; title: string | null; createdAt: string; createdBy: string | null }[];
+  researchRun: { id: string; mode: string; status: string; detail: string | null; sessionUrl: string | null; createdAt: string } | null;
+  deepResearchEnabled: boolean;
 };

@@ -20,8 +20,9 @@ export async function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     {
-      // Sign-in routes and Workflow's internal routes must not pass through the gate.
-      source: "/((?!_next/static|_next/image|favicon.ico|login|api/auth/|.well-known/workflow/).*)",
+      // Sign-in routes, Workflow's internal routes, and the routine-facing research API
+      // (authenticated with its own bearer token) bypass the Google sign-in gate.
+      source: "/((?!_next/static|_next/image|favicon.ico|login|api/auth/|api/research/|.well-known/workflow/).*)",
     },
   ],
 };

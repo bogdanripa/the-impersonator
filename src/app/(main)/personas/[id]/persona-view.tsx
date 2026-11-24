@@ -8,6 +8,8 @@ import type { Icp } from "@/lib/types";
 import type { PersonaData, Source } from "@/lib/client-types";
 import { Button, StatusPill, TierBadge } from "@/components/ui";
 import { buildIndex, EvidenceToggle } from "@/components/evidence";
+import { PersonaCard } from "@/components/persona-card";
+import { Markdown } from "@/components/markdown";
 
 const RUNNING = ["discovering", "extracting", "synthesizing"];
 
@@ -16,6 +18,7 @@ export default function PersonaView() {
   const router = useRouter();
   const [data, setData] = useState<PersonaData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [updating, setUpdating] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -61,8 +64,24 @@ export default function PersonaView() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <Link href="/" className="text-xs text-zinc-500 underline">← All personas</Link>
-          <h1 className="mt-1 text-2xl font-semibold">{persona.name}</h1>
-          <div className="mt-1 flex items-center gap-2 text-sm text-zinc-500">
+          {persona.icp ? (
+            <div className="mt-2">
+              <PersonaCard
+                persona={persona}
+                footer={
+                  <EvidenceToggle
+                    insightIds={persona.summaryInsightIds}
+                    storyIds={persona.summaryStoryIds}
+                    idx={buildIndex(data)}
+                    label="Show"
+                  />
+                }
+              />
+            </div>
+          ) : (
+            <h1 className="mt-1 text-2xl font-semibold">{persona.name}</h1>
+          )}
+          <div className="mt-2 flex items-center gap-2 text-sm text-zinc-500">
             <StatusPill status={persona.status} />
             {RUNNING.includes(persona.status) && <span className="animate-pulse">●</span>}
             <span>{persona.statusDetail}</span>
@@ -84,8 +103,34 @@ export default function PersonaView() {
 
       {error && <p className="rounded border border-red-300 p-2 text-sm text-red-700">{error}</p>}
 
+      {persona.status !== "draft" && !updating && (
+        <DeepResearch data={data} onStart={() => setUpdating(true)} />
+      )}
+
+      {updating && (
+        <Builder
+          data={data}
+          mode="update"
+          onChange={load}
+          onCancel={() => setUpdating(false)}
+          onConfirm={() =>
+            act(async () => {
+              await api(`/api/personas/${id}/deep-research`, { method: "POST" });
+              setUpdating(false);
+            })
+          }
+        />
+      )}
+
       {persona.status === "draft" ? (
-        <Builder data={data} onChange={load} onConfirm={() => act(() => api(`/api/personas/${id}/research`, { method: "POST" }))} />
+        <Builder
+          data={data}
+          onChange={load}
+          // Deep research by the Claude routine is the default; the in-app search is a fallback.
+          onConfirm={() =>
+            act(() => api(`/api/personas/${id}/${data.deepResearchEnabled ? "deep-research" : "research"}`, { method: "POST" }))
+          }
+        />
       ) : (
         persona.icp && <IcpCard icp={persona.icp} />
       )}
@@ -106,11 +151,68 @@ export default function PersonaView() {
   );
 }
 
-function Builder({ data, onChange, onConfirm }: { data: PersonaData; onChange: () => Promise<void>; onConfirm: () => void }) {
+const RUN_LABEL: Record<string, string> = {
+  requested: "Starting",
+  researching: "Researching",
+  verifying: "Verifying",
+  done: "Done",
+  failed: "Failed",
+};
+
+/** Deep research by the Claude routine: start it, and follow its progress. */
+function DeepResearch({ data, onStart }: { data: PersonaData; onStart: () => void }) {
+  const { persona, researchRun: run, deepResearchEnabled } = data;
+  const running = ["discovering", "extracting", "synthesizing"].includes(persona.status);
+  const active = run && ["requested", "researching", "verifying"].includes(run.status);
+  if (!persona.icp || (!deepResearchEnabled && !run)) return null;
+  return (
+    <section className="flex flex-wrap items-center gap-3 rounded-lg border border-violet-300 p-3 text-sm dark:border-violet-900">
+      <div className="min-w-0 flex-1">
+        <div className="font-medium">Deep research with Claude</div>
+        {run ? (
+          <div className="text-zinc-500">
+            {run.mode === "update" ? "Update" : "Research"} · {RUN_LABEL[run.status] ?? run.status}
+            {run.detail ? ` · ${run.detail}` : ""}
+            {run.sessionUrl && (
+              <>
+                {" · "}
+                <a href={run.sessionUrl} target="_blank" rel="noreferrer noopener" className="underline">
+                  watch the session
+                </a>
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="text-zinc-500">
+            Exhaustive, multi-round research by a Claude agent. Everything it finds is re-fetched and verified word for word here before use.
+          </div>
+        )}
+      </div>
+      {deepResearchEnabled && !active && !running && persona.version > 0 && (
+        <Button onClick={onStart}>Update this persona</Button>
+      )}
+    </section>
+  );
+}
+
+function Builder({
+  data,
+  onChange,
+  onConfirm,
+  onCancel,
+  mode = "create",
+}: {
+  data: PersonaData;
+  onChange: () => Promise<void>;
+  onConfirm: () => void;
+  onCancel?: () => void;
+  mode?: "create" | "update";
+}) {
   const [text, setText] = useState("");
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const icp = data.persona.icp;
+  const isUpdate = mode === "update";
+  const icp = isUpdate ? data.persona.pendingIcp : data.persona.icp;
 
   async function send(e: React.FormEvent) {
     e.preventDefault();
@@ -132,16 +234,20 @@ function Builder({ data, onChange, onConfirm }: { data: PersonaData; onChange: (
 
   return (
     <section className="space-y-4">
-      <h2 className="text-lg font-semibold">Who do you want to talk to?</h2>
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold">{isUpdate ? "Update this persona" : "Who do you want to talk to?"}</h2>
+        {onCancel && <Button variant="secondary" onClick={onCancel}>Cancel</Button>}
+      </div>
       <div className="space-y-3">
         <Bubble role="assistant">
-          Tell me which real person you want to simulate, e.g. “the CMO of Unilever”, or a name and company. I&apos;ll confirm
-          who they are, then we&apos;ll decide which peers to learn from and what the persona needs to know.
+          {isUpdate
+            ? "What should the next research run change or add? For example new research questions, newer material (latest results, recent interviews), a topic to dig into, or a different peer group."
+            : "Tell me which real person you want to simulate, e.g. “the CMO of Unilever”, or a name and company. I'll confirm who they are, then we'll decide which peers to learn from and what the persona needs to know."}
         </Bubble>
         {data.builder.map((m, i) => (
           <div key={i} className="space-y-2">
-            {m.content && <Bubble role={m.role}>{m.content}</Bubble>}
-            {m.icp && i === data.builder.length - 1 && <IcpCard icp={m.icp} />}
+            {m.content && <Bubble role={m.role}>{m.role === "assistant" ? <Markdown>{m.content}</Markdown> : m.content}</Bubble>}
+            {m.icp && i === data.builder.length - 1 && (!isUpdate || data.persona.pendingIcp) && <IcpCard icp={m.icp} />}
           </div>
         ))}
         {pending && <Bubble role="user">{pending}</Bubble>}
@@ -159,8 +265,17 @@ function Builder({ data, onChange, onConfirm }: { data: PersonaData; onChange: (
       </form>
       {icp && (
         <div className="flex items-center gap-3 rounded border border-emerald-300 p-3 dark:border-emerald-900">
-          <p className="flex-1 text-sm">Happy with the setup above? Next, I&apos;ll search for their interviews, company material and peers.</p>
-          <Button onClick={onConfirm} disabled={!!pending}>Confirm & find sources</Button>
+          <p className="flex-1 text-sm">
+            Happy with the setup above?{" "}
+            {isUpdate
+              ? "Claude will research what's new and what you asked for, then the persona is rebuilt as a new version. Existing chats keep their version."
+              : data.deepResearchEnabled
+              ? "Claude will research them exhaustively: their own interviews and writing, company material and peers. It can take a while; you can leave this page."
+              : "Next, I'll search for their interviews, company material and peers."}
+          </p>
+          <Button onClick={onConfirm} disabled={!!pending || (isUpdate && !data.deepResearchEnabled)}>
+            {isUpdate ? "Confirm & update with Claude" : data.deepResearchEnabled ? "Confirm & research with Claude" : "Confirm & find sources"}
+          </Button>
         </div>
       )}
     </section>
@@ -171,7 +286,7 @@ function Bubble({ role, children }: { role: "user" | "assistant"; children: Reac
   return (
     <div className={`flex ${role === "user" ? "justify-end" : "justify-start"}`}>
       <div
-        className={`max-w-[85%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm ${
+        className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${role === "user" ? "whitespace-pre-wrap " : ""}${
           role === "user" ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "bg-zinc-100 dark:bg-zinc-900"
         }`}
       >

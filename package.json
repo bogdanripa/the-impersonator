@@ -10,8 +10,11 @@
     "typecheck": "next typegen && tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "seed": "tsx --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/seed.ts",
-    "build:local": "next build"
+    "seed": "tsx --env-file-if-exists=.env --env-file-if-exists=.env.local --tsconfig tsconfig.json scripts/seed.ts",
+    "build:local": "next build",
+    "seed:verify": "tsx --env-file-if-exists=.env --env-file-if-exists=.env.local --tsconfig tsconfig.json scripts/seed-verify.ts",
+    "fetch-text": "tsx --tsconfig tsconfig.json scripts/fetch-text.ts",
+    "research-api": "tsx --tsconfig tsconfig.json scripts/research-api.ts"
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",
@@ -23,6 +26,8 @@
     "pg": "^8.23.1",
     "react": "19.3.0",
     "react-dom": "19.3.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "workflow": "^5.8.0",
     "zod": "^4.6.7"
   },

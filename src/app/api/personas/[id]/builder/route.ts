@@ -4,9 +4,15 @@ import type { BuilderMessage } from "@/lib/builder";
 import { db, schema } from "@/lib/db";
 import { builderTurn } from "@/lib/builder";
 import { handleError, jsonError } from "@/lib/http";
+import { sameName } from "@/lib/research";
+import { nameKey } from "@/lib/verify";
 
 export const maxDuration = 300;
 
+/**
+ * The persona chat. On a new persona it defines the setup; on a researched persona it's an
+ * update chat whose revised setup stays pending until the update research is launched.
+ */
 export async function POST(request: Request, ctx: RouteContext<"/api/personas/[id]/builder">) {
   try {
     const { id } = await ctx.params;
@@ -14,19 +20,36 @@ export async function POST(request: Request, ctx: RouteContext<"/api/personas/[i
     if (!text?.trim()) return jsonError("Message is empty");
     const persona = await db.query.personas.findFirst({ where: eq(schema.personas.id, id) });
     if (!persona) return jsonError("Persona not found", 404);
-    if (persona.status !== "draft") return jsonError("The ICP is locked once research has started.", 409);
+
+    const isUpdate = persona.version > 0;
+    if (!isUpdate && persona.status !== "draft") return jsonError("The setup is locked while research runs.", 409);
+    if (isUpdate && !["ready", "failed"].includes(persona.status)) return jsonError("Wait for the current research to finish.", 409);
 
     const history = persona.builderMessages as BuilderMessage[];
-    const { messages, reply, icp } = await builderTurn(history, text.trim());
+    const current = isUpdate ? (persona.pendingIcp ?? persona.icp) : null;
+    const { messages, reply, icp } = await builderTurn(history, text.trim(), current);
+
+    let proposal = icp;
+    let note: string | null = null;
+    if (proposal && isUpdate && persona.icp) {
+      // An update can't swap the person being simulated.
+      const samePerson = sameName(nameKey(proposal.anchor_name), nameKey(persona.icp.anchor_name));
+      if (!samePerson) {
+        proposal = null;
+        note = "An update can't change the person being simulated. Create a new persona for someone else.";
+      }
+    }
+
     await db
       .update(schema.personas)
       .set({
-        builderMessages: messages,
-        ...(icp ? { icp, name: icp.persona_name } : {}),
+        builderMessages: note ? [...messages, { role: "assistant", content: note }] : messages,
+        ...(proposal && !isUpdate ? { icp: proposal, name: proposal.persona_name } : {}),
+        ...(proposal && isUpdate ? { pendingIcp: proposal } : {}),
         updatedAt: new Date(),
       })
       .where(eq(schema.personas.id, id));
-    return NextResponse.json({ reply, icp: icp ?? persona.icp });
+    return NextResponse.json({ reply: note ?? reply, icp: proposal });
   } catch (err) {
     return handleError(err);
   }
