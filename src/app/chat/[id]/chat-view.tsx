@@ -13,6 +13,7 @@ import { CompanyLogo, PersonaPhoto, type CardPersona } from "@/components/person
 type Message = {
   id: string; role: string; content: string; innerThought: string | null;
   insightIds: string[]; storyIds: string[]; ungrounded: boolean; createdAt: string;
+  segments: { text: string; insightIds: string[]; storyIds: string[]; noEvidence: boolean }[] | null;
 };
 type Conversation = {
   id: string; personaId: string; personaVersion: number; title: string | null; createdBy: string | null; createdAt: string;
@@ -285,14 +286,25 @@ function UserMessage({ content }: { content: string }) {
   );
 }
 
+const TIER_HIGHLIGHT: Record<string, string> = {
+  anchor: "bg-emerald-500/15 ring-1 ring-emerald-500/40",
+  company: "bg-indigo-500/15 ring-1 ring-indigo-500/40",
+  peer: "bg-amber-500/15 ring-1 ring-amber-500/40",
+};
+
 function PersonaMessage({ m, idx, card, showThoughts }: { m: Message; idx: EvidenceIndex; card: CardPersona; showThoughts: boolean }) {
   const [open, setOpen] = useState(false);
-  const tiers = new Set(
-    [...m.insightIds.map((i) => idx.insights.get(i)?.subjectId), ...m.storyIds.map((s) => idx.stories.get(s)?.subjectId)]
-      .filter((x): x is string => !!x)
-      .map((sid) => subjectTier(idx.subjects.get(sid))),
-  );
+  const [hoverTier, setHoverTier] = useState<string | null>(null);
+  const tiersOf = (insightIds: string[], storyIds: string[]) =>
+    new Set(
+      [...insightIds.map((i) => idx.insights.get(i)?.subjectId), ...storyIds.map((x) => idx.stories.get(x)?.subjectId)]
+        .filter((x): x is string => !!x)
+        .map((sid) => subjectTier(idx.subjects.get(sid))),
+    );
+  const tiers = tiersOf(m.insightIds, m.storyIds);
   const n = m.insightIds.length + m.storyIds.length;
+  const segments = m.segments?.length ? m.segments : null;
+
   return (
     <div className="flex gap-3">
       <div className="mt-0.5">
@@ -306,7 +318,28 @@ function PersonaMessage({ m, idx, card, showThoughts }: { m: Message; idx: Evide
           </div>
         )}
         <div className="text-[15px]">
-          <Markdown>{m.content}</Markdown>
+          {segments ? (
+            <div className="space-y-2">
+              {segments.map((seg, i) => {
+                const segTiers = tiersOf(seg.insightIds, seg.storyIds);
+                const cited = seg.insightIds.length + seg.storyIds.length > 0;
+                const lit = hoverTier && segTiers.has(hoverTier as "anchor" | "company" | "peer");
+                return (
+                  <div
+                    key={i}
+                    title={!cited && !seg.noEvidence ? "No evidence cited for this paragraph" : undefined}
+                    className={`-mx-2 rounded-md px-2 py-0.5 transition ${
+                      hoverTier ? (lit ? TIER_HIGHLIGHT[hoverTier] : "opacity-35") : ""
+                    } ${!cited && !seg.noEvidence ? "border-l-2 border-dashed border-red-400/70" : ""}`}
+                  >
+                    <Markdown>{seg.text}</Markdown>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <Markdown>{m.content}</Markdown>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
           {m.ungrounded ? (
@@ -316,12 +349,25 @@ function PersonaMessage({ m, idx, card, showThoughts }: { m: Message; idx: Evide
           ) : n === 0 ? (
             <span>No public evidence on this; they said so.</span>
           ) : (
-            <button onClick={() => setOpen((v) => !v)} className="flex items-center gap-2 hover:text-zinc-900 dark:hover:text-zinc-100">
-              <span className="underline underline-offset-2">
+            <>
+              <button onClick={() => setOpen((v) => !v)} className="underline underline-offset-2 hover:text-zinc-900 dark:hover:text-zinc-100">
                 {open ? "Hide" : "Grounded in"} {n} {n === 1 ? "quote" : "quotes"}
-              </span>
-              {[...tiers].map((t) => <TierBadge key={t} tier={t} />)}
-            </button>
+              </button>
+              {[...tiers].map((t) => (
+                <span
+                  key={t}
+                  tabIndex={segments ? 0 : undefined}
+                  onMouseEnter={() => segments && setHoverTier(t)}
+                  onMouseLeave={() => setHoverTier(null)}
+                  onFocus={() => segments && setHoverTier(t)}
+                  onBlur={() => setHoverTier(null)}
+                  className={segments ? "cursor-help" : undefined}
+                  title={segments ? "Highlight the paragraphs this evidence shaped" : undefined}
+                >
+                  <TierBadge tier={t} />
+                </span>
+              ))}
+            </>
           )}
         </div>
         {open && <EvidenceList insightIds={m.insightIds} storyIds={m.storyIds} idx={idx} />}

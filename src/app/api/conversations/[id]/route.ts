@@ -14,6 +14,7 @@ export async function GET(request: Request, ctx: RouteContext<"/api/conversation
         id: schema.messages.id, role: schema.messages.role, content: schema.messages.content,
         innerThought: schema.messages.innerThought, insightIds: schema.messages.insightIds,
         storyIds: schema.messages.storyIds, ungrounded: schema.messages.ungrounded, createdAt: schema.messages.createdAt,
+        segments: schema.messages.segments,
       })
       .from(schema.messages)
       .where(eq(schema.messages.conversationId, id))

@@ -263,6 +263,8 @@ export const messages = pgTable(
     innerThought: text("inner_thought"),
     insightIds: jsonb("insight_ids").$type<string[]>().notNull().default([]),
     storyIds: jsonb("story_ids").$type<string[]>().notNull().default([]),
+    /** The reply split into blocks, each with its own evidence (for per-paragraph highlighting). */
+    segments: jsonb("segments").$type<{ text: string; insightIds: string[]; storyIds: string[]; noEvidence: boolean }[]>(),
     /** True when the reply cited no valid evidence. Shown as a warning, never as fact. */
     ungrounded: boolean("ungrounded").notNull().default(false),
     /** Exact assistant output, replayed so the model sees its own prior turns unchanged. */
