@@ -57,6 +57,13 @@
       "when": 1795553018260,
       "tag": "0007_soul_status",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1795553278088,
+      "tag": "0008_live_evidence",
+      "breakpoints": true
     }
   ]
 }

@@ -267,7 +267,9 @@ export const messages = pgTable(
     insightIds: jsonb("insight_ids").$type<string[]>().notNull().default([]),
     storyIds: jsonb("story_ids").$type<string[]>().notNull().default([]),
     /** The reply split into blocks, each with its own evidence (for per-paragraph highlighting). */
-    segments: jsonb("segments").$type<{ text: string; insightIds: string[]; storyIds: string[]; noEvidence: boolean }[]>(),
+    segments: jsonb("segments").$type<{ text: string; insightIds: string[]; storyIds: string[]; liveIds?: string[]; noEvidence: boolean }[]>(),
+    /** Live-retrieved evidence this reply cites (see live_evidence). */
+    liveIds: jsonb("live_ids").$type<string[]>().notNull().default([]),
     /** True when the reply cited no valid evidence. Shown as a warning, never as fact. */
     ungrounded: boolean("ungrounded").notNull().default(false),
     /** Exact assistant output, replayed so the model sees its own prior turns unchanged. */
@@ -336,4 +338,27 @@ export const personaSouls = pgTable(
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("persona_souls_persona_version").on(t.personaId, t.version)],
+);
+
+/**
+ * Evidence retrieved live during a conversation: fetched by our server, quotes verified verbatim
+ * against the page. Attached to the conversation only; not part of the persona's researched evidence.
+ */
+export const liveEvidence = pgTable(
+  "live_evidence",
+  {
+    id: id(),
+    conversationId: uuid("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+    query: text("query").notNull(),
+    url: text("url").notNull(),
+    title: text("title"),
+    quote: text("quote").notNull(),
+    speaker: text("speaker").notNull(),
+    /** True when the speaker is the person being simulated. */
+    isAnchor: boolean("is_anchor").notNull(),
+    summary: text("summary").notNull(),
+    contentHash: text("content_hash"),
+    retrievedAt: timestamp("retrieved_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("live_evidence_conversation").on(t.conversationId)],
 );

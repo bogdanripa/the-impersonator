@@ -13,8 +13,10 @@ import { CompanyLogo, PersonaPhoto, type CardPersona } from "@/components/person
 type Message = {
   id: string; role: string; content: string; innerThought: string | null;
   insightIds: string[]; storyIds: string[]; ungrounded: boolean; createdAt: string;
-  segments: { text: string; insightIds: string[]; storyIds: string[]; noEvidence: boolean }[] | null;
+  segments: { text: string; insightIds: string[]; storyIds: string[]; liveIds?: string[]; noEvidence: boolean }[] | null;
+  liveIds?: string[];
 };
+type Live = { id: string; url: string; title: string | null; quote: string; speaker: string; isAnchor: boolean; retrievedAt: string; query: string };
 type Conversation = {
   id: string; personaId: string; personaVersion: number; title: string | null; createdBy: string | null; createdAt: string;
 };
@@ -32,6 +34,7 @@ export default function ChatView() {
   const [showThoughts, setShowThoughts] = useState(false);
   const [showLegend, setShowLegend] = useState(false);
   const [canWrite, setCanWrite] = useState(true);
+  const [live, setLive] = useState<Map<string, Live>>(new Map());
   const [copied, setCopied] = useState(false);
   const scroller = useRef<HTMLElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -39,9 +42,10 @@ export default function ChatView() {
   useEffect(() => {
     (async () => {
       try {
-        const c = await api<{ conversation: Conversation; messages: Message[]; canWrite: boolean }>(`/api/conversations/${id}`);
+        const c = await api<{ conversation: Conversation; messages: Message[]; canWrite: boolean; live: Live[] }>(`/api/conversations/${id}`);
         setConversation(c.conversation);
         setCanWrite(c.canWrite);
+        setLive(new Map(c.live.map((l) => [l.id, l])));
         setMessages(c.messages);
         setPersona(await api<PersonaData>(`/api/personas/${c.conversation.personaId}`));
       } catch (e) {
@@ -76,6 +80,10 @@ export default function ChatView() {
     setError(null);
     try {
       const r = await api<{ user: Message; persona: Message }>(`/api/conversations/${id}/messages`, { body: { text: msg } });
+      if (r.persona.liveIds?.length) {
+        const c = await api<{ live: Live[] }>(`/api/conversations/${id}`);
+        setLive(new Map(c.live.map((l) => [l.id, l])));
+      }
       setMessages((m) => [...m, r.user, r.persona]);
     } catch (err) {
       setError((err as Error).message);
@@ -156,6 +164,7 @@ export default function ChatView() {
               <div className="flex items-center gap-2"><TierBadge tier="anchor" /> what {name} actually said</div>
               <div className="flex items-center gap-2"><TierBadge tier="company" /> official company material</div>
               <div className="flex items-center gap-2"><TierBadge tier="peer" /> similar people, never their own experience</div>
+              <div className="flex items-center gap-2"><TierBadge tier="live" /> looked up online during this chat, verified against the page</div>
               <p className="text-zinc-500">Replies that cite no evidence are flagged as ungrounded. Each conversation starts fresh.</p>
               <label className="flex items-center gap-2 sm:hidden">
                 <input type="checkbox" checked={showThoughts} onChange={(e) => setShowThoughts(e.target.checked)} />
@@ -202,7 +211,7 @@ export default function ChatView() {
             m.role === "user" ? (
               <UserMessage key={m.id} content={m.content} />
             ) : (
-              <PersonaMessage key={m.id} m={m} idx={idx} card={persona.persona} showThoughts={showThoughts} />
+              <PersonaMessage key={m.id} m={m} idx={idx} live={live} card={persona.persona} showThoughts={showThoughts} />
             ),
           )}
 
@@ -211,7 +220,7 @@ export default function ChatView() {
               <UserMessage content={pending} />
               <div className="flex items-center gap-3 text-sm text-zinc-500">
                 <Avatar persona={persona.persona} size="sm" />
-                <span className="animate-pulse">{name} is thinking…</span>
+                <span className="animate-pulse">{name} is thinking… (may look things up online)</span>
               </div>
             </>
           )}
@@ -286,19 +295,26 @@ const TIER_HIGHLIGHT: Record<string, string> = {
   anchor: "bg-emerald-500/15 ring-1 ring-emerald-500/40",
   company: "bg-indigo-500/15 ring-1 ring-indigo-500/40",
   peer: "bg-amber-500/15 ring-1 ring-amber-500/40",
+  live: "bg-sky-500/15 ring-1 ring-sky-500/40",
 };
 
-function PersonaMessage({ m, idx, card, showThoughts }: { m: Message; idx: EvidenceIndex; card: CardPersona; showThoughts: boolean }) {
+function PersonaMessage({
+  m, idx, live, card, showThoughts,
+}: { m: Message; idx: EvidenceIndex; live: Map<string, Live>; card: CardPersona; showThoughts: boolean }) {
   const [open, setOpen] = useState(false);
   const [hoverTier, setHoverTier] = useState<string | null>(null);
-  const tiersOf = (insightIds: string[], storyIds: string[]) =>
-    new Set(
+  const tiersOf = (insightIds: string[], storyIds: string[], liveIds: string[] = []) => {
+    const t = new Set<string>(
       [...insightIds.map((i) => idx.insights.get(i)?.subjectId), ...storyIds.map((x) => idx.stories.get(x)?.subjectId)]
         .filter((x): x is string => !!x)
         .map((sid) => subjectTier(idx.subjects.get(sid))),
     );
-  const tiers = tiersOf(m.insightIds, m.storyIds);
-  const n = m.insightIds.length + m.storyIds.length;
+    if (liveIds.length) t.add("live");
+    return t;
+  };
+  const liveIds = m.liveIds ?? [];
+  const tiers = tiersOf(m.insightIds, m.storyIds, liveIds);
+  const n = m.insightIds.length + m.storyIds.length + liveIds.length;
   const segments = m.segments?.length ? m.segments : null;
 
   return (
@@ -317,9 +333,9 @@ function PersonaMessage({ m, idx, card, showThoughts }: { m: Message; idx: Evide
           {segments ? (
             <div className="space-y-2">
               {segments.map((seg, i) => {
-                const segTiers = tiersOf(seg.insightIds, seg.storyIds);
-                const cited = seg.insightIds.length + seg.storyIds.length > 0;
-                const lit = hoverTier && segTiers.has(hoverTier as "anchor" | "company" | "peer");
+                const segTiers = tiersOf(seg.insightIds, seg.storyIds, seg.liveIds ?? []);
+                const cited = seg.insightIds.length + seg.storyIds.length + (seg.liveIds?.length ?? 0) > 0;
+                const lit = hoverTier && segTiers.has(hoverTier);
                 return (
                   <div
                     key={i}
@@ -366,7 +382,28 @@ function PersonaMessage({ m, idx, card, showThoughts }: { m: Message; idx: Evide
             </>
           )}
         </div>
-        {open && <EvidenceList insightIds={m.insightIds} storyIds={m.storyIds} idx={idx} />}
+        {open && (
+          <>
+            {liveIds.length > 0 && (
+              <ul className="mt-2 space-y-2">
+                {liveIds.map((lid) => live.get(lid)).filter((l): l is Live => !!l).map((l) => (
+                  <li key={l.id} className="rounded border border-sky-300/60 p-2 text-sm dark:border-sky-800">
+                    <blockquote className="border-l-2 border-sky-400 pl-2 italic">“{l.quote}”</blockquote>
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+                      <TierBadge tier="live" />
+                      <span>{l.speaker}{l.isAnchor ? " (their own words)" : ""}</span>
+                      <a href={l.url} target="_blank" rel="noreferrer noopener" className="underline">
+                        {l.title ?? new URL(l.url).hostname}
+                      </a>
+                      <span>· retrieved live {new Date(l.retrievedAt).toLocaleString()}, verified against the page</span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <EvidenceList insightIds={m.insightIds} storyIds={m.storyIds} idx={idx} />
+          </>
+        )}
       </div>
     </div>
   );

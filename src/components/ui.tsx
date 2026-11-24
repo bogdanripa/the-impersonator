@@ -22,6 +22,7 @@ const TIER: Record<string, { label: string; cls: string }> = {
   company: { label: "Company", cls: "bg-indigo-600 text-white" },
   peer: { label: "Peer", cls: "border border-amber-500 text-amber-700 dark:text-amber-400" },
   peers: { label: "Peers", cls: "border border-amber-500 text-amber-700 dark:text-amber-400" },
+  live: { label: "Live", cls: "bg-sky-600 text-white" },
 };
 
 /** Visual distinction between the anchor's own words, company facts and peer material. */

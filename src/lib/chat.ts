@@ -4,17 +4,20 @@ import { and, asc, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { checkResponse, llm, MODEL } from "@/lib/llm";
 import { getSoul } from "@/lib/soul";
+import { liveLookup } from "@/lib/live";
 
 const ReplySchema = z.object({
   inner_thought: z.string().describe("What this person privately thinks but wouldn't say. Grounded in the same evidence."),
   thought_insight_codes: z.array(z.string()).describe("I# codes the inner thought relies on"),
   thought_story_codes: z.array(z.string()).describe("S# codes the inner thought relies on"),
+  thought_live_codes: z.array(z.string()).describe("L# codes (live lookups) the inner thought relies on"),
   segments: z
     .array(
       z.object({
         text: z.string().describe("One block of the reply in Markdown: a paragraph, a list, or a table"),
         insight_codes: z.array(z.string()).describe("I# codes THIS block relies on"),
         story_codes: z.array(z.string()).describe("S# codes THIS block relies on"),
+        live_codes: z.array(z.string()).describe("L# codes (live lookups) THIS block relies on"),
         no_evidence: z.boolean().describe("True only if this block says the evidence doesn't cover something"),
       }),
     )
@@ -22,7 +25,22 @@ const ReplySchema = z.object({
   evidence_gap: z.boolean().describe("True if the evidence doesn't cover what was asked"),
 });
 
-export type ReplySegment = { text: string; insightIds: string[]; storyIds: string[]; noEvidence: boolean };
+export type ReplySegment = { text: string; insightIds: string[]; storyIds: string[]; liveIds: string[]; noEvidence: boolean };
+
+const LIVE_TOOL = {
+  type: "function" as const,
+  name: "live_lookup",
+  description:
+    "Search the web right now for something the evidence doesn't cover (e.g. recent news, something they said publicly). Returns verified quotes with L# codes, or nothing. Use sparingly: at most twice per reply.",
+  parameters: {
+    type: "object",
+    properties: { query: { type: "string", description: "Focused search query, including the person's or company's name" } },
+    required: ["query"],
+    additionalProperties: false,
+  },
+  strict: true,
+};
+const MAX_LOOKUPS = 2;
 
 type Persona = typeof schema.personas.$inferSelect;
 
@@ -124,6 +142,7 @@ Hard rules:
 9. If asked whether you are really ${icp.anchor_name}, say you're a simulation built from their public statements.
 10. This conversation starts fresh. You don't remember any other conversation.
 11. Formatting: reply in Markdown. Use tables or bullet lists when they genuinely help (e.g. a breakdown or a comparison), but every cell must come from the evidence; write "not disclosed" rather than inventing a value. Keep it conversational otherwise.
+12. Live lookups: if the user asks about something the evidence doesn't cover and it could be public (recent news, a recent interview, company announcements), call live_lookup with a focused query. Results are quotes our server just fetched and verified word for word, tagged [LIVE-OWN] (the person's own words: you may use them as your own, mentioning they're recent if it matters) or [LIVE-OTHER] (other people or reporting: use only as "I've seen it reported that…", never as your own view or experience). Cite them with live_codes. If a lookup returns nothing, say the evidence doesn't cover it.
 
 ${soul ? `Your soul (who you are underneath the job title; let it shape your tone, reactions and inner thoughts, use your own phrases where natural, but never treat it as a source of new facts):\n${soul}\n\n` : ""}Profile (synthesized from the evidence):
 ${profile}
@@ -151,11 +170,15 @@ export async function personaReply(conversationId: string, userText: string) {
     .where(eq(schema.messages.conversationId, conversationId))
     .orderBy(asc(schema.messages.createdAt));
 
-  const response = await llm().responses.parse({
+  const base = {
     model: MODEL,
     instructions: instructions(persona, ctx),
-    reasoning: { effort: "medium" },
+    reasoning: { effort: "medium" as const },
     text: { format: zodTextFormat(ReplySchema, "persona_reply") },
+    tools: [LIVE_TOOL],
+  };
+  let response = await llm().responses.parse({
+    ...base,
     input: [
       ...history.map((m) =>
         m.role === "user"
@@ -165,6 +188,40 @@ export async function personaReply(conversationId: string, userText: string) {
       { role: "user" as const, content: userText },
     ],
   });
+  // Live lookups: run them on our side (fetched + verified), hand back verified quotes as L# codes.
+  const lCodes = new Map<string, string>(); // L# → live_evidence id
+  let lookups = 0;
+  for (let round = 0; round <= MAX_LOOKUPS; round++) {
+    const calls = response.output.filter(
+      (o): o is Extract<(typeof response.output)[number], { type: "function_call" }> => o.type === "function_call" && o.name === "live_lookup",
+    );
+    if (!calls.length) break;
+    const outputs = [];
+    for (const call of calls) {
+      let text = "Live lookup limit reached; answer with what you have.";
+      if (lookups < MAX_LOOKUPS) {
+        lookups++;
+        const query = String((JSON.parse(call.arguments || "{}") as { query?: string }).query ?? "").slice(0, 300);
+        const rows = query ? await liveLookup(conversationId, persona.icp, query).catch(() => []) : [];
+        text = rows.length
+          ? rows
+              .map((r) => {
+                const code = `L${lCodes.size + 1}`;
+                lCodes.set(code, r.id);
+                return `${code} [${r.isAnchor ? "LIVE-OWN" : "LIVE-OTHER"}] ${r.speaker} (${r.url}): "${r.quote}"`;
+              })
+              .join("\n")
+          : "Nothing verifiable found for that query.";
+      }
+      outputs.push({ type: "function_call_output" as const, call_id: call.call_id, output: text });
+    }
+    response = await llm().responses.parse({
+      ...base,
+      previous_response_id: response.id,
+      input: outputs,
+      ...(lookups >= MAX_LOOKUPS ? { tool_choice: "none" as const } : {}),
+    });
+  }
   checkResponse(response);
   const out = response.output_parsed;
   if (!out) throw new Error("Persona returned no parsable reply");
@@ -172,12 +229,20 @@ export async function personaReply(conversationId: string, userText: string) {
   // Keep only codes that exist; anything else is dropped, and an uncited reply is flagged.
   const ins = (codes: string[]) => [...new Set(codes.map((c) => ctx.iCodes.get(c.trim())?.id).filter((x): x is string => !!x))];
   const sts = (codes: string[]) => [...new Set(codes.map((c) => ctx.sCodes.get(c.trim())?.id).filter((x): x is string => !!x))];
+  const lvs = (codes: string[]) => [...new Set(codes.map((c) => lCodes.get(c.trim())).filter((x): x is string => !!x))];
   const segments: ReplySegment[] = out.segments
     .filter((seg) => seg.text.trim())
-    .map((seg) => ({ text: seg.text.trim(), insightIds: ins(seg.insight_codes), storyIds: sts(seg.story_codes), noEvidence: seg.no_evidence }));
+    .map((seg) => ({
+      text: seg.text.trim(),
+      insightIds: ins(seg.insight_codes),
+      storyIds: sts(seg.story_codes),
+      liveIds: lvs(seg.live_codes),
+      noEvidence: seg.no_evidence,
+    }));
+  const liveIds = [...new Set([...segments.flatMap((x) => x.liveIds), ...lvs(out.thought_live_codes)])];
   const insightIds = [...new Set([...segments.flatMap((x) => x.insightIds), ...ins(out.thought_insight_codes)])];
   const storyIds = [...new Set([...segments.flatMap((x) => x.storyIds), ...sts(out.thought_story_codes)])];
-  const ungrounded = insightIds.length + storyIds.length === 0 && !out.evidence_gap;
+  const ungrounded = insightIds.length + storyIds.length + liveIds.length === 0 && !out.evidence_gap;
   const reply = segments.map((x) => x.text).join("\n\n");
 
   const [userRow] = await db.insert(schema.messages).values({ conversationId, role: "user", content: userText }).returning();
@@ -190,6 +255,7 @@ export async function personaReply(conversationId: string, userText: string) {
       innerThought: out.inner_thought,
       insightIds,
       storyIds,
+      liveIds,
       segments,
       ungrounded,
       raw: JSON.stringify(out),

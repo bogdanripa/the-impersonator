@@ -14,14 +14,19 @@ export async function GET(request: Request, ctx: RouteContext<"/api/conversation
         id: schema.messages.id, role: schema.messages.role, content: schema.messages.content,
         innerThought: schema.messages.innerThought, insightIds: schema.messages.insightIds,
         storyIds: schema.messages.storyIds, ungrounded: schema.messages.ungrounded, createdAt: schema.messages.createdAt,
-        segments: schema.messages.segments,
+        segments: schema.messages.segments, liveIds: schema.messages.liveIds,
       })
       .from(schema.messages)
       .where(eq(schema.messages.conversationId, id))
       .orderBy(asc(schema.messages.createdAt));
+    const live = await db
+      .select()
+      .from(schema.liveEvidence)
+      .where(eq(schema.liveEvidence.conversationId, id))
+      .orderBy(asc(schema.liveEvidence.retrievedAt));
     const viewer = request.headers.get("x-user-email");
     const canWrite = !conversation.createdBy || conversation.createdBy === viewer;
-    return NextResponse.json({ conversation, messages, canWrite });
+    return NextResponse.json({ conversation, messages, canWrite, live });
   } catch (err) {
     return handleError(err);
   }
