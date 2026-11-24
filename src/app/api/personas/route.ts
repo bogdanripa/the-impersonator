@@ -16,6 +16,7 @@ export async function GET() {
         summary: schema.personas.summary,
         tagline: schema.personas.tagline,
         hasPhoto: sql<boolean>`${schema.personas.photoData} is not null`,
+        photoSourceUrl: schema.personas.photoSourceUrl,
         hasLogo: sql<boolean>`${schema.personas.logoData} is not null`,
         updatedAt: schema.personas.updatedAt,
       })

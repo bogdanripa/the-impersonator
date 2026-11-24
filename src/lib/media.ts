@@ -2,7 +2,26 @@ import { eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { assertPublicUrl } from "@/lib/fetch-source";
 import { parseHTML } from "linkedom";
+import { z } from "zod";
+import { zodTextFormat } from "openai/helpers/zod";
+import { checkResponse, llm, MODEL } from "@/lib/llm";
+import type { Icp } from "@/lib/types";
 import { nameKey, normalize } from "@/lib/verify";
+
+/** Web search for official pages that show the person's headshot (verified separately). */
+async function searchPhotoPages(icp: Icp): Promise<string[]> {
+  const response = await llm().responses.parse({
+    model: MODEL,
+    reasoning: { effort: "low" },
+    tools: [{ type: "web_search" }],
+    instructions:
+      "Find public web pages that show a headshot photo of this specific person and name them on the page: their company's leadership/team/newsroom pages, press releases with their photo, conference or event speaker pages, award pages, podcast guest pages. Not LinkedIn, not social media, not image search results. Only return URLs you actually saw in search results.",
+    input: `${icp.anchor_name}, ${icp.anchor_role} at ${icp.anchor_company}`,
+    text: { format: zodTextFormat(z.object({ pages: z.array(z.string()).describe("Up to 6 page URLs, best first") }), "photo_pages") },
+  });
+  checkResponse(response);
+  return (response.output_parsed?.pages ?? []).filter((u) => /^https?:\/\//.test(u) && !/linkedin\.com|facebook\.com|instagram\.com|x\.com|twitter\.com/i.test(u)).slice(0, 6);
+}
 
 /** Lowercase, accents removed, non-alphanumerics to spaces: "Pitiș" and "Pitis" compare equal. */
 function fold(v: string) {
@@ -91,36 +110,54 @@ async function fetchHtml(rawUrl: string): Promise<string> {
  * The photo is accepted only if it comes from a page that names the person and shows that image
  * (official leadership, newsroom or event-speaker pages); otherwise the card shows initials.
  */
-export async function refreshPersonaMedia(personaId: string) {
+export async function refreshPersonaMedia(personaId: string, opts: { forceSearch?: boolean } = {}) {
   const persona = await db.query.personas.findFirst({ where: eq(schema.personas.id, personaId) });
   const icp = persona?.icp;
   if (!persona || !icp) return { photo: "no persona", logo: "no persona" };
   const result = { photo: "none", logo: "none" };
   const set: Partial<typeof schema.personas.$inferInsert> = {};
 
-  if (icp.anchor_photo_page) {
-    try {
-      const page = new URL(icp.anchor_photo_page);
-      // The page must name the person; the image must be one that this page shows.
-      const html = await fetchHtml(page.toString());
-      const pageText = fold(html);
-      if (!fold(icp.anchor_name).split(" ").every((w) => pageText.includes(w))) throw new Error("Photo page doesn't name the person");
-      let imgUrl: string | null = null;
-      if (icp.anchor_photo_url) {
-        const img = new URL(icp.anchor_photo_url, page);
-        const paths = [img.pathname, decodeURIComponentSafe(img.pathname)];
-        if (paths.some((p) => html.includes(p) || decodeURIComponentSafe(html.replace(/%(?![0-9a-f]{2})/gi, "%25")).includes(p))) {
-          imgUrl = img.toString();
-        }
+  const tryPage = async (pageUrl: string, photoUrl: string) => {
+    const page = new URL(pageUrl);
+    // The page must name the person; the image must be one that this page shows.
+    const html = await fetchHtml(page.toString());
+    const pageText = fold(html);
+    if (!fold(icp.anchor_name).split(" ").every((w) => pageText.includes(w))) throw new Error("Photo page doesn't name the person");
+    let imgUrl: string | null = null;
+    if (photoUrl) {
+      const img = new URL(photoUrl, page);
+      const paths = [img.pathname, decodeURIComponentSafe(img.pathname)];
+      if (paths.some((p) => html.includes(p) || decodeURIComponentSafe(html.replace(/%(?![0-9a-f]{2})/gi, "%25")).includes(p))) {
+        imgUrl = img.toString();
       }
-      imgUrl ??= findPhotoOnPage(html, page, icp.anchor_name);
-      if (!imgUrl) throw new Error("No photo of the person found on that page");
-      const photo = await fetchImage(imgUrl);
-      Object.assign(set, { photoData: photo.data, photoType: photo.type, photoSourceUrl: page.toString() });
-      result.photo = "ok";
-    } catch (err) {
-      result.photo = (err as Error).message;
     }
+    imgUrl ??= findPhotoOnPage(html, page, icp.anchor_name);
+    if (!imgUrl) throw new Error("No photo of the person found on that page");
+    return { ...(await fetchImage(imgUrl)), page: page.toString() };
+  };
+
+  const candidates: { page: string; img: string }[] = [];
+  if (icp.anchor_photo_page) candidates.push({ page: icp.anchor_photo_page, img: icp.anchor_photo_url ?? "" });
+  // No usable page yet (and no stored photo): look for one on the web.
+  const searched = !persona.photoData || !!opts.forceSearch;
+  let tried = 0;
+  for (let round = 0; round < 2; round++) {
+    for (const c of candidates.slice(tried)) {
+      tried++;
+      try {
+        const photo = await tryPage(c.page, c.img);
+        Object.assign(set, { photoData: photo.data, photoType: photo.type, photoSourceUrl: photo.page });
+        if (photo.page !== icp.anchor_photo_page) set.icp = { ...icp, anchor_photo_page: photo.page, anchor_photo_url: "" };
+        result.photo = "ok";
+        break;
+      } catch (err) {
+        result.photo = (err as Error).message;
+      }
+    }
+    if (result.photo === "ok" || round > 0 || !searched) break;
+    const found = await searchPhotoPages(icp).catch(() => []);
+    candidates.push(...found.filter((u) => !candidates.some((c) => c.page === u)).map((page) => ({ page, img: "" })));
+    if (tried === candidates.length) break;
   }
 
   const domain = icp.company_domain?.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");

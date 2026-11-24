@@ -5,6 +5,7 @@ import type { Icp } from "@/lib/types";
 
 export type CardPersona = {
   id: string;
+  photoSourceUrl?: string | null;
   name: string;
   icp: Icp | null;
   summary?: string | null;
@@ -27,14 +28,47 @@ export function PersonaPhoto({ persona, size = "md" }: { persona: CardPersona; s
   if (persona.hasPhoto && !failed) {
     return (
       // eslint-disable-next-line @next/next/no-img-element -- served from our own API, already sized
-      <img src={`/api/personas/${persona.id}/photo`} alt={name} onError={() => setFailed(true)} className={`${cls} object-cover`} />
+      <img
+        src={`/api/personas/${persona.id}/photo`}
+        alt={name}
+        title={persona.photoSourceUrl ? `Photo from ${hostOf(persona.photoSourceUrl)}` : undefined}
+        onError={() => setFailed(true)}
+        className={`${cls} object-cover object-[50%_25%]`}
+      />
     );
   }
+  // No verified photo: a generated abstract avatar, unique per person and clearly not a photograph.
+  const h = hash(name);
+  const a = h % 360;
+  const b = (a + 40 + ((h >> 9) % 80)) % 360;
+  const angle = (h >> 3) % 360;
   return (
-    <div aria-hidden className={`${cls} flex items-center justify-center bg-zinc-800 font-semibold text-white dark:bg-zinc-200 dark:text-zinc-900`}>
+    <div
+      aria-label={`${name} (no photo available)`}
+      title="No verified photo found"
+      className={`${cls} flex items-center justify-center font-semibold text-white`}
+      style={{
+        backgroundImage: `radial-gradient(circle at ${20 + (h % 60)}% ${20 + ((h >> 5) % 60)}%, hsl(${b} 70% 60% / 0.9), transparent 60%), linear-gradient(${angle}deg, hsl(${a} 55% 38%), hsl(${b} 60% 30%))`,
+        textShadow: "0 1px 2px rgb(0 0 0 / 0.35)",
+      }}
+    >
       {initials(name)}
     </div>
   );
+}
+
+function hostOf(u: string) {
+  try {
+    return new URL(u).hostname.replace(/^www\./, "");
+  } catch {
+    return u;
+  }
+}
+
+function hash(v: string) {
+  let h = 2166136261;
+  for (const ch of v) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
+  return h;
 }
 
 export function CompanyLogo({ persona, size = 16 }: { persona: CardPersona; size?: number }) {

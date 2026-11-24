@@ -85,6 +85,9 @@ Rules (the app enforces them, so follow them):
   unsigned company page to an individual.
 - `subject.identity_quote`: a verbatim sentence from the page that names their role and/or company.
 - Summaries, story fields and synthesis say nothing beyond the cited evidence.
+- `icp.anchor_photo_page`: a page that shows the anchor's headshot and names them (leadership,
+  newsroom, speaker or interview page; not LinkedIn). The app picks and verifies the image; if
+  you don't find one, the app searches itself.
 - `synthesis.summary`: 2-3 sentence persona-card description citing ANCHOR or COMPANY evidence.
 - `synthesis.elements` (25-45): the anchor's own profile first (from anchor/company evidence),
   then peer patterns for gaps. Peer-only elements need ≥ 2 different peers. `history` elements must
