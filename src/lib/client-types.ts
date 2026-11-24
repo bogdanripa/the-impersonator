@@ -1,4 +1,5 @@
 import type { Icp } from "@/lib/types";
+import type { SoulSection, SoulSheet } from "@/lib/db/schema";
 
 export type Source = {
   id: string; url: string; title: string | null; tier: string; publisher: string | null; publishedAt: string | null;
@@ -35,6 +36,9 @@ export type PersonaData = {
   stories: Story[];
   rejections: { stage: string; count: number }[];
   conversations: { id: string; title: string | null; createdAt: string; createdBy: string | null }[];
-  researchRun: { id: string; mode: string; status: string; detail: string | null; sessionUrl: string | null; createdAt: string } | null;
+  researchRun: {
+    id: string; mode: string; status: string; detail: string | null; sessionUrl: string | null; createdAt: string; updatedAt: string;
+  } | null;
   deepResearchEnabled: boolean;
+  soul: { sections: SoulSection[]; sheet: SoulSheet } | null;
 };

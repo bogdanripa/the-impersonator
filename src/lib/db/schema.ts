@@ -308,3 +308,29 @@ export const researchChecks = pgTable(
   },
   (t) => [uniqueIndex("research_checks_run_source").on(t.runId, t.sourceIndex)],
 );
+
+export type SoulSection = { key: string; title: string; body: string; insightIds: string[]; storyIds: string[] };
+export type SoulSheet = {
+  phrases: { phrase: string; insightId: string }[];
+  scales: { key: string; left: string; right: string; value: number | null; insightIds: string[] }[];
+  lightsUpOn: { topic: string; insightIds: string[] }[];
+  deflects: { topic: string; insightIds: string[] }[];
+};
+
+/**
+ * The persona's SOUL.md: identity, beliefs, values, drives, frustrations, decisions, people,
+ * voice and tensions, plus a character sheet. Built only from the anchor's own words and their
+ * company's material, every section citing its evidence. One per persona version.
+ */
+export const personaSouls = pgTable(
+  "persona_souls",
+  {
+    id: id(),
+    personaId: uuid("persona_id").notNull().references(() => personas.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    sections: jsonb("sections").$type<SoulSection[]>().notNull(),
+    sheet: jsonb("sheet").$type<SoulSheet>().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("persona_souls_persona_version").on(t.personaId, t.version)],
+);

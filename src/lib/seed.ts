@@ -13,7 +13,7 @@ import { db, schema } from "@/lib/db";
 import { fetchSource } from "@/lib/fetch-source";
 import { nameKey, normalize, verifyQuote } from "@/lib/verify";
 import { IcpSchema, type Icp } from "@/lib/types";
-import { companyMatches, planSynthesis, sameName, saveSynthesis } from "@/lib/research";
+import { companyMatches, generateSoulSafely, planSynthesis, sameName, saveSynthesis } from "@/lib/research";
 import { refreshPersonaMedia } from "@/lib/media";
 
 const Quote = { quote: z.string(), speaker: z.string() };
@@ -361,5 +361,6 @@ export async function importSeedPersona(seed: SeedPersona, checks: SourceCheck[]
   }
   await saveSynthesis({ persona, subjects, iCode, sCode, out: toSynthesisOutput(seed) });
   await refreshPersonaMedia(persona.id).catch(() => null);
+  await generateSoulSafely(persona.id);
   return { id: persona.id, ok: true };
 }

@@ -10,6 +10,7 @@ import { Button, StatusPill, TierBadge } from "@/components/ui";
 import { buildIndex, EvidenceToggle } from "@/components/evidence";
 import { CompanyLogo, PersonaPhoto } from "@/components/persona-card";
 import { Markdown } from "@/components/markdown";
+import { soulMarkdown } from "@/lib/soul-format";
 
 const RUNNING = ["discovering", "extracting", "synthesizing"];
 
@@ -115,7 +116,7 @@ export default function PersonaView() {
       </div>
 
       {error && <p className="rounded border border-red-300 p-2 text-sm text-red-700">{error}</p>}
-      <StatusBanner data={data} />
+      <StatusBanner data={data} act={act} personaId={id} />
 
       {updating && (
         <Builder
@@ -191,25 +192,73 @@ function Menu({ items }: { items: MenuItem[] }) {
   );
 }
 
+/** Current time, refreshed periodically (keeps render pure). */
+function useNow(intervalMs: number) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), intervalMs);
+    return () => clearInterval(t);
+  }, [intervalMs]);
+  return now;
+}
+
+/** Minutes without a sign of life before a routine run is considered stalled. */
+const START_TIMEOUT_MIN = 10;
+const PROGRESS_TIMEOUT_MIN = 45;
+
 /** Only shown when something is in progress or needs attention. */
-function StatusBanner({ data }: { data: PersonaData }) {
+function StatusBanner({ data, act, personaId }: { data: PersonaData; act: (fn: () => Promise<unknown>) => void; personaId: string }) {
   const { persona, researchRun: run } = data;
+  const now = useNow(30_000);
   const busy = RUNNING.includes(persona.status);
-  const runActive = run && ["requested", "researching", "verifying"].includes(run.status);
+  const runActive = !!run && ["requested", "researching"].includes(run.status);
   if (!busy && !runActive && persona.status !== "failed" && persona.status !== "reviewing") return null;
-  const tone =
-    persona.status === "failed"
-      ? "border-red-300 text-red-800 dark:border-red-900 dark:text-red-300"
-      : "border-violet-300 dark:border-violet-900";
+
+  // We can't ask Anthropic whether a routine session failed, so notice silence instead.
+  const minutes = run ? (now - new Date(run.updatedAt).getTime()) / 60000 : 0;
+  const stalled =
+    runActive && ((run.status === "requested" && minutes > START_TIMEOUT_MIN) || (run.status === "researching" && minutes > PROGRESS_TIMEOUT_MIN));
+  const failed = persona.status === "failed" || stalled;
+  const tone = failed ? "border-red-300 text-red-800 dark:border-red-900 dark:text-red-300" : "border-violet-300 dark:border-violet-900";
+  const message = stalled
+    ? run.status === "requested"
+      ? `Claude hasn't started this research after ${Math.round(minutes)} minutes. The session probably failed.`
+      : `No progress from Claude for ${Math.round(minutes)} minutes. The session may have stopped.`
+    : persona.statusDetail;
+
   return (
     <div className={`flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-sm ${tone}`}>
-      <StatusPill status={persona.status} />
-      {busy && <span className="animate-pulse">●</span>}
-      <span className="min-w-0 flex-1">{persona.statusDetail}</span>
-      {runActive && run.sessionUrl && (
+      {!stalled && <StatusPill status={persona.status} />}
+      {busy && !stalled && <span className="animate-pulse">●</span>}
+      <span className="min-w-0 flex-1">{message}</span>
+      {run?.sessionUrl && (runActive || failed) && (
         <a href={run.sessionUrl} target="_blank" rel="noreferrer noopener" className="underline">
-          Watch Claude&apos;s session
+          {stalled ? "Check Claude's session" : "Watch Claude's session"}
         </a>
+      )}
+      {(stalled || (runActive && busy)) && (
+        <>
+          {stalled && data.deepResearchEnabled && (
+            <Button
+              onClick={() =>
+                act(async () => {
+                  await api(`/api/personas/${personaId}/deep-research/cancel`, { method: "POST" });
+                  await api(`/api/personas/${personaId}/deep-research`, { method: "POST" });
+                })
+              }
+            >
+              Retry
+            </Button>
+          )}
+          <Button
+            variant="secondary"
+            onClick={() =>
+              confirm("Cancel this research run?") && act(() => api(`/api/personas/${personaId}/deep-research/cancel`, { method: "POST" }))
+            }
+          >
+            Cancel
+          </Button>
+        </>
       )}
     </div>
   );
@@ -293,10 +342,10 @@ function Conversations({ personaId, onNew }: { personaId: string; onNew: () => v
   );
 }
 
-const TABS = ["About", "Research questions", "Profile", "Sources", "Setup"] as const;
+const TABS = ["Soul", "About", "Research questions", "Profile", "Sources", "Setup"] as const;
 
 function Tabs({ data, act, personaId }: { data: PersonaData; act: (fn: () => Promise<unknown>) => void; personaId: string }) {
-  const [tab, setTab] = useState<(typeof TABS)[number]>("About");
+  const [tab, setTab] = useState<(typeof TABS)[number]>(data.soul ? "Soul" : "About");
   const idx = useMemo(() => buildIndex(data), [data]);
   return (
     <section>
@@ -313,6 +362,7 @@ function Tabs({ data, act, personaId }: { data: PersonaData; act: (fn: () => Pro
           </button>
         ))}
       </div>
+      {tab === "Soul" && <SoulView data={data} />}
       {tab === "About" && (
         <div className="space-y-3">
           {data.persona.summary ? <p className="leading-relaxed">{data.persona.summary}</p> : <p className="text-zinc-500">No description yet.</p>}
@@ -672,5 +722,103 @@ function SourceRow({ s, act, editable }: { s: Source; act: (fn: () => Promise<un
         </div>
       </div>
     </li>
+  );
+}
+
+/** The persona's SOUL.md: identity sections, a character sheet, and a download. */
+function SoulView({ data }: { data: PersonaData }) {
+  const idx = useMemo(() => buildIndex(data), [data]);
+  const soul = data.soul;
+  if (!soul) {
+    return <p className="text-sm text-zinc-500">No soul yet. It&apos;s generated from their own words after research.</p>;
+  }
+  const name = data.persona.icp?.anchor_name ?? data.persona.name;
+  const download = () => {
+    const md = soulMarkdown(name, soul, (id) => {
+      const q = idx.insights.get(id) ?? idx.stories.get(id);
+      if (!q) return undefined;
+      const subject = idx.subjects.get(q.subjectId);
+      return { quote: q.quote, who: subject?.name ?? "", url: idx.sources.get(q.sourceId)?.url ?? "" };
+    });
+    const url = URL.createObjectURL(new Blob([md], { type: "text/markdown" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `SOUL-${name.replace(/\s+/g, "-")}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  const { phrases, scales, lightsUpOn, deflects } = soul.sheet;
+  return (
+    <div className="grid gap-8 lg:grid-cols-[1fr_280px]">
+      <div className="space-y-6">
+        <p className="text-xs text-zinc-500">
+          Written in their voice, only from their own words and their company&apos;s material. Every section cites its quotes.
+        </p>
+        {soul.sections.map((sec) => (
+          <section key={sec.key}>
+            <h3 className="mb-1 font-semibold">{sec.title}</h3>
+            <div className="text-[15px] leading-relaxed">
+              <Markdown>{sec.body}</Markdown>
+            </div>
+            <EvidenceToggle insightIds={sec.insightIds} storyIds={sec.storyIds} idx={idx} />
+          </section>
+        ))}
+      </div>
+      <aside className="space-y-6 lg:sticky lg:top-4 lg:self-start">
+        <Button variant="secondary" onClick={download}>Download SOUL.md</Button>
+        <div>
+          <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">Temperament</h3>
+          <ul className="space-y-3">
+            {scales.map((sc) => (
+              <li key={sc.key} className="text-xs">
+                <div className="mb-1 flex justify-between text-zinc-500">
+                  <span>{sc.left}</span>
+                  <span>{sc.right}</span>
+                </div>
+                {sc.value ? (
+                  <div className="relative h-1.5 rounded-full bg-zinc-200 dark:bg-zinc-800">
+                    <div
+                      className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-zinc-900 dark:bg-zinc-100"
+                      style={{ left: `${((sc.value - 1) / 4) * 100}%` }}
+                      title={`${sc.value}/5`}
+                    />
+                  </div>
+                ) : (
+                  <div className="text-zinc-400">Not enough evidence</div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+        {phrases.length > 0 && (
+          <div>
+            <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">Things they say</h3>
+            <ul className="space-y-1.5 text-sm italic">
+              {phrases.map((p) => <li key={p.phrase}>“{p.phrase}”</li>)}
+            </ul>
+          </div>
+        )}
+        {lightsUpOn.length > 0 && (
+          <div>
+            <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">Lights up on</h3>
+            <div className="flex flex-wrap gap-1.5">
+              {lightsUpOn.map((t) => (
+                <span key={t.topic} className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs">{t.topic}</span>
+              ))}
+            </div>
+          </div>
+        )}
+        {deflects.length > 0 && (
+          <div>
+            <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">Deflects</h3>
+            <div className="flex flex-wrap gap-1.5">
+              {deflects.map((t) => (
+                <span key={t.topic} className="rounded-full bg-zinc-500/15 px-2 py-0.5 text-xs">{t.topic}</span>
+              ))}
+            </div>
+          </div>
+        )}
+      </aside>
+    </div>
   );
 }

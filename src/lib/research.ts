@@ -468,6 +468,17 @@ export async function synthesize(personaId: string) {
   if (!out) throw new Error("Synthesis returned no parsable output");
 
   await saveSynthesis({ persona, subjects, iCode, sCode, out });
+  await generateSoulSafely(personaId);
+}
+
+/** The soul is a layer on top of the profile: if it fails, the persona is still usable. */
+export async function generateSoulSafely(personaId: string) {
+  try {
+    const { generateSoul } = await import("@/lib/soul");
+    await generateSoul(personaId);
+  } catch (err) {
+    console.error("Soul generation failed", err);
+  }
 }
 
 export type SynthesisOutput = z.infer<typeof SynthesisSchema>;

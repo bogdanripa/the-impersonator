@@ -43,6 +43,13 @@
       "when": 1795550346218,
       "tag": "0005_message_segments",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795551337328,
+      "tag": "0006_persona_souls",
+      "breakpoints": true
     }
   ]
 }

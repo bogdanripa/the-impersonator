@@ -15,7 +15,8 @@
     "seed:verify": "tsx --env-file-if-exists=.env --env-file-if-exists=.env.local --tsconfig tsconfig.json scripts/seed-verify.ts",
     "fetch-text": "tsx --tsconfig tsconfig.json scripts/fetch-text.ts",
     "research-api": "tsx --tsconfig tsconfig.json scripts/research-api.ts",
-    "persona-meta": "tsx --env-file-if-exists=.env --env-file-if-exists=.env.local --tsconfig tsconfig.json scripts/persona-meta.ts"
+    "persona-meta": "tsx --env-file-if-exists=.env --env-file-if-exists=.env.local --tsconfig tsconfig.json scripts/persona-meta.ts",
+    "soul": "tsx --env-file-if-exists=.env --env-file-if-exists=.env.local --tsconfig tsconfig.json scripts/soul.ts"
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",

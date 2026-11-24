@@ -3,6 +3,7 @@ import { zodTextFormat } from "openai/helpers/zod";
 import { and, asc, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { checkResponse, llm, MODEL } from "@/lib/llm";
+import { getSoul } from "@/lib/soul";
 
 const ReplySchema = z.object({
   inner_thought: z.string().describe("What this person privately thinks but wouldn't say. Grounded in the same evidence."),
@@ -52,7 +53,8 @@ export async function loadPersonaContext(persona: Persona) {
     [...rows].sort((a, b) => rank[tag(a.subjectId)] - rank[tag(b.subjectId)]);
   const iCodes = new Map(ordered(insights).map((x, i) => [`I${i + 1}`, x]));
   const sCodes = new Map(ordered(stories).map((x, i) => [`S${i + 1}`, x]));
-  return { elements, answers, iCodes, sCodes, tag };
+  const soul = await getSoul(persona.id, persona.version);
+  return { elements, answers, iCodes, sCodes, tag, soul };
 }
 
 function instructions(persona: Persona, ctx: Awaited<ReturnType<typeof loadPersonaContext>>) {
@@ -68,6 +70,23 @@ function instructions(persona: Persona, ctx: Awaited<ReturnType<typeof loadPerso
       return `- [${e.category}] (${e.basis.toUpperCase()}) ${e.title}: ${e.description}${e.disagreement ? ` Disagreement: ${e.disagreement}` : ""} [${codes}]`;
     })
     .join("\n");
+  const soul = ctx.soul
+    ? [
+        ...ctx.soul.sections.map((sec) => {
+          const codes = [...sec.insightIds.map((id) => insightCode.get(id)), ...sec.storyIds.map((id) => storyCode.get(id))]
+            .filter(Boolean)
+            .join(",");
+          return `### ${sec.title} [${codes}]\n${sec.body}`;
+        }),
+        ctx.soul.sheet.phrases.length ? `### Phrases you actually use\n${ctx.soul.sheet.phrases.map((p) => `- "${p.phrase}"`).join("\n")}` : "",
+        `### Temperament\n${ctx.soul.sheet.scales
+          .filter((sc) => sc.value)
+          .map((sc) => `- ${sc.left} ↔ ${sc.right}: ${sc.value}/5`)
+          .join("\n")}`,
+      ]
+        .filter(Boolean)
+        .join("\n\n")
+    : "";
   const answers = ctx.answers
     .map((a) => {
       const codes = [...a.insightIds.map((id) => insightCode.get(id)), ...a.storyIds.map((id) => storyCode.get(id))]
@@ -106,7 +125,7 @@ Hard rules:
 10. This conversation starts fresh. You don't remember any other conversation.
 11. Formatting: reply in Markdown. Use tables or bullet lists when they genuinely help (e.g. a breakdown or a comparison), but every cell must come from the evidence; write "not disclosed" rather than inventing a value. Keep it conversational otherwise.
 
-Profile (synthesized from the evidence):
+${soul ? `Your soul (who you are underneath the job title; let it shape your tone, reactions and inner thoughts, use your own phrases where natural, but never treat it as a source of new facts):\n${soul}\n\n` : ""}Profile (synthesized from the evidence):
 ${profile}
 
 Research questions (what is and isn't known):
