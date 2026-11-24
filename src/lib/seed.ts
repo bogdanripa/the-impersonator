@@ -235,7 +235,11 @@ export function acceptedCount(c: SourceCheck) {
  * (Conversations keep their persona version, but quotes that were dropped from the evidence
  * can no longer be shown on their older messages.)
  */
-export async function importSeedPersona(seed: SeedPersona, checks: SourceCheck[], opts: { personaId?: string } = {}) {
+export async function importSeedPersona(
+  seed: SeedPersona,
+  checks: SourceCheck[],
+  opts: { personaId?: string; soul?: boolean } = {},
+) {
   let persona: typeof schema.personas.$inferSelect;
   if (opts.personaId) {
     const existing = await db.query.personas.findFirst({ where: eq(schema.personas.id, opts.personaId) });
@@ -361,6 +365,8 @@ export async function importSeedPersona(seed: SeedPersona, checks: SourceCheck[]
   }
   await saveSynthesis({ persona, subjects, iCode, sCode, out: toSynthesisOutput(seed) });
   await refreshPersonaMedia(persona.id).catch(() => null);
-  await generateSoulSafely(persona.id);
+  // CLI imports write the soul inline; workflows run it as its own step (it takes 1-2 minutes).
+  if (opts.soul !== false) await generateSoulSafely(persona.id);
+  else await db.update(schema.personas).set({ soulStatus: "pending", soulError: null }).where(eq(schema.personas.id, persona.id));
   return { id: persona.id, ok: true };
 }

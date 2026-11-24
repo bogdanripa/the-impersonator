@@ -41,11 +41,12 @@ export default function PersonaView() {
   }, [id]);
 
   const status = data?.persona.status;
+  const soulWriting = data?.persona.soulStatus === "generating";
   useEffect(() => {
-    if (!status || !RUNNING.includes(status)) return;
+    if (!soulWriting && (!status || !RUNNING.includes(status))) return;
     const t = setInterval(load, 4000);
     return () => clearInterval(t);
-  }, [status, load]);
+  }, [status, soulWriting, load]);
 
   async function act(fn: () => Promise<unknown>) {
     setError(null);
@@ -73,6 +74,9 @@ export default function PersonaView() {
 
   const menu: MenuItem[] = [
     ...(ready && data.deepResearchEnabled && !busy ? [{ label: "Update this persona…", onClick: () => setUpdating(true) }] : []),
+    ...(ready && !busy && persona.soulStatus !== "generating"
+      ? [{ label: data.soul ? "Rewrite soul" : "Write soul", onClick: () => act(() => api(`/api/personas/${id}/soul`, { method: "POST" })) }]
+      : []),
     {
       label: "Delete persona",
       danger: true,
@@ -117,6 +121,11 @@ export default function PersonaView() {
 
       {error && <p className="rounded border border-red-300 p-2 text-sm text-red-700">{error}</p>}
       <StatusBanner data={data} act={act} personaId={id} />
+      {ready && persona.soulStatus === "generating" && (
+        <div className="flex items-center gap-2 rounded-lg border border-violet-300 px-3 py-2 text-sm dark:border-violet-900">
+          <span className="animate-pulse">●</span> Writing their soul… (usually 1–2 minutes)
+        </div>
+      )}
 
       {updating && (
         <Builder
@@ -362,7 +371,7 @@ function Tabs({ data, act, personaId }: { data: PersonaData; act: (fn: () => Pro
           </button>
         ))}
       </div>
-      {tab === "Soul" && <SoulView data={data} />}
+      {tab === "Soul" && <SoulView data={data} act={act} personaId={personaId} />}
       {tab === "About" && (
         <div className="space-y-3">
           {data.persona.summary ? <p className="leading-relaxed">{data.persona.summary}</p> : <p className="text-zinc-500">No description yet.</p>}
@@ -726,11 +735,37 @@ function SourceRow({ s, act, editable }: { s: Source; act: (fn: () => Promise<un
 }
 
 /** The persona's SOUL.md: identity sections, a character sheet, and a download. */
-function SoulView({ data }: { data: PersonaData }) {
+function SoulView({ data, act, personaId }: { data: PersonaData; act: (fn: () => Promise<unknown>) => void; personaId: string }) {
   const idx = useMemo(() => buildIndex(data), [data]);
   const soul = data.soul;
+  const { soulStatus, soulError } = data.persona;
+  const write = () => act(() => api(`/api/personas/${personaId}/soul`, { method: "POST" }));
+  if (soulStatus === "generating") {
+    return (
+      <div className="flex items-center gap-3 rounded-lg border border-violet-300 p-4 text-sm dark:border-violet-900">
+        <span className="animate-pulse">●</span>
+        <div>
+          <div className="font-medium">Writing their soul…</div>
+          <div className="text-zinc-500">
+            Reading everything they&apos;ve said and turning it into who they are. This usually takes 1–2 minutes; the page updates by itself.
+          </div>
+        </div>
+      </div>
+    );
+  }
   if (!soul) {
-    return <p className="text-sm text-zinc-500">No soul yet. It&apos;s generated from their own words after research.</p>;
+    return (
+      <div className={`flex flex-wrap items-center gap-3 rounded-lg border p-4 text-sm ${soulStatus === "failed" ? "border-red-300 dark:border-red-900" : "border-zinc-200 dark:border-zinc-800"}`}>
+        <div className="min-w-0 flex-1">
+          <div className="font-medium">{soulStatus === "failed" ? "The soul couldn't be written" : "No soul yet"}</div>
+          <div className="text-zinc-500">
+            {soulError ??
+              "The soul (their identity, beliefs, values, voice and tensions) is written from their own verified words after research."}
+          </div>
+        </div>
+        <Button onClick={write}>{soulStatus === "failed" ? "Try again" : "Write soul"}</Button>
+      </div>
+    );
   }
   const name = data.persona.icp?.anchor_name ?? data.persona.name;
   const download = () => {

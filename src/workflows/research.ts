@@ -5,6 +5,7 @@ import {
   importRunStep,
   runSourceCountStep,
   runStatusStep,
+  soulStep,
   statusStep,
   synthesizeStep,
   verifyRunSourceStep,
@@ -42,7 +43,9 @@ export async function extractWorkflow(personaId: string) {
     await synthesizeStep(personaId);
   } catch (err) {
     await statusStep(personaId, "failed", `Research failed: ${(err as Error).message}`);
+    return;
   }
+  await soulWithoutFailingPersona(personaId);
 }
 
 /**
@@ -65,5 +68,21 @@ export async function importResearchWorkflow(runId: string, personaId: string) {
   } catch (err) {
     await runStatusStep(runId, "failed", (err as Error).message);
     await statusStep(personaId, "failed", `Importing research failed: ${(err as Error).message}`);
+    return;
+  }
+  await soulWithoutFailingPersona(personaId);
+}
+
+/** Writes the persona's SOUL.md as its own step; failures are recorded and shown, not fatal. */
+export async function soulWorkflow(personaId: string) {
+  "use workflow";
+  await soulWithoutFailingPersona(personaId);
+}
+
+async function soulWithoutFailingPersona(personaId: string) {
+  try {
+    await soulStep(personaId);
+  } catch {
+    // runSoul recorded the failure on the persona; the persona itself stays ready.
   }
 }

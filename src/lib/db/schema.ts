@@ -40,6 +40,9 @@ export const personas = pgTable("personas", {
   version: integer("version").notNull().default(0),
   /** Persona-card description. Only set when it cites the anchor's or company's own evidence. */
   summary: text("summary"),
+  /** SOUL.md generation for the current version: pending | generating | ready | failed. */
+  soulStatus: text("soul_status"),
+  soulError: text("soul_error"),
   /** One-line version of the summary for cards (same evidence rules). */
   tagline: text("tagline"),
   /** Official headshot and company logo, stored so cards don't depend on third-party hosts. */

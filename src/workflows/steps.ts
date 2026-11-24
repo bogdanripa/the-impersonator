@@ -62,3 +62,10 @@ export async function runStatusStep(runId: string, status: string, detail: strin
   "use step";
   await updateRun(runId, { status, detail });
 }
+
+export async function soulStep(personaId: string) {
+  "use step";
+  const { runSoul } = await import("@/lib/soul");
+  await runSoul(personaId);
+}
+soulStep.maxRetries = 1;

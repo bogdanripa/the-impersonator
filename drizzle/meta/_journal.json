@@ -50,6 +50,13 @@
       "when": 1795551337328,
       "tag": "0006_persona_souls",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795553018260,
+      "tag": "0007_soul_status",
+      "breakpoints": true
     }
   ]
 }

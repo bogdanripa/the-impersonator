@@ -148,6 +148,25 @@ export async function generateSoul(personaId: string) {
   return { sections: sections.length, phrases: sheet.phrases.length };
 }
 
+/** Generates the soul and records its status, so the UI can show progress and failures. */
+export async function runSoul(personaId: string) {
+  const setStatus = (soulStatus: string, soulError: string | null) =>
+    db.update(schema.personas).set({ soulStatus, soulError }).where(eq(schema.personas.id, personaId));
+  await setStatus("generating", null);
+  try {
+    const res = await generateSoul(personaId);
+    await setStatus(
+      res ? "ready" : "failed",
+      res ? null : "Not enough of their own words to write a soul. Add sources where they speak or write, then update the persona.",
+    );
+    return res;
+  } catch (err) {
+    console.error("Soul generation failed", err);
+    await setStatus("failed", `Writing the soul failed: ${(err as Error).message.slice(0, 200)}`);
+    throw err;
+  }
+}
+
 export async function getSoul(personaId: string, version: number) {
   return db.query.personaSouls.findFirst({
     where: and(eq(schema.personaSouls.personaId, personaId), eq(schema.personaSouls.version, version)),

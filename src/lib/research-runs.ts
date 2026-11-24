@@ -72,7 +72,7 @@ export async function importRun(runId: string) {
     .where(and(eq(schema.researchChecks.runId, runId)))
     .orderBy(asc(schema.researchChecks.sourceIndex));
   const checks = rows.map((r) => r.result as SourceCheck);
-  const res = await importSeedPersona(seed, checks, { personaId: persona.id });
+  const res = await importSeedPersona(seed, checks, { personaId: persona.id, soul: false });
   const after = await db.query.personas.findFirst({ where: eq(schema.personas.id, persona.id) });
   await updateRun(run.id, { status: res.ok ? "done" : "failed", detail: after?.statusDetail ?? null });
 }
