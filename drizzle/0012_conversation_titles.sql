@@ -1,0 +1,1 @@
+ALTER TABLE "conversations" ADD COLUMN "title_generated_at" timestamp with time zone;

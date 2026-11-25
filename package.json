@@ -16,6 +16,7 @@
     "fetch-text": "tsx --tsconfig tsconfig.json scripts/fetch-text.ts",
     "research-api": "tsx --tsconfig tsconfig.json scripts/research-api.ts",
     "persona-meta": "tsx --env-file-if-exists=.env --env-file-if-exists=.env.local --tsconfig tsconfig.json scripts/persona-meta.ts",
+    "conversation-titles": "tsx --env-file-if-exists=.env --env-file-if-exists=.env.local --tsconfig tsconfig.json scripts/conversation-titles.ts",
     "soul": "tsx --env-file-if-exists=.env --env-file-if-exists=.env.local --tsconfig tsconfig.json scripts/soul.ts"
   },
   "dependencies": {

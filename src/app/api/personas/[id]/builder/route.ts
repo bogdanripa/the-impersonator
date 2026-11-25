@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import type { BuilderMessage } from "@/lib/builder";
 import { db, schema } from "@/lib/db";
 import { findPersona } from "@/lib/access";
@@ -29,7 +29,12 @@ export async function POST(request: Request, ctx: RouteContext<"/api/personas/[i
 
     const history = persona.builderMessages as BuilderMessage[];
     const current = isUpdate ? (persona.pendingIcp ?? persona.icp) : null;
-    const { messages, reply, icp } = await builderTurn(history, text.trim(), current);
+    const files = await db
+      .select({ id: schema.attachments.id, filename: schema.attachments.filename, text: schema.attachments.text })
+      .from(schema.attachments)
+      .where(eq(schema.attachments.personaId, id))
+      .orderBy(asc(schema.attachments.createdAt));
+    const { messages, reply, icp } = await builderTurn(history, text.trim(), current, files);
 
     let proposal = icp;
     let note: string | null = null;

@@ -1,5 +1,5 @@
 {
-  "id": "52bca011-8d80-4b7a-94ae-5003050d0b41",
+  "id": "f932509d-ad99-4e40-aaa1-d8debf70ffdb",
   "prevId": "a1f9228b-4d53-42ee-8c5a-316c33242d40",
   "version": "7",
   "dialect": "postgresql",
@@ -30,6 +30,12 @@
         "title": {
           "name": "title",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "title_generated_at": {
+          "name": "title_generated_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
@@ -930,12 +936,6 @@
           "notNull": true,
           "default": "'[]'::jsonb"
         },
-        "org": {
-          "name": "org",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
         "created_by": {
           "name": "created_by",
           "type": "text",
@@ -957,23 +957,7 @@
           "default": "now()"
         }
       },
-      "indexes": {
-        "personas_org": {
-          "name": "personas_org",
-          "columns": [
-            {
-              "expression": "org",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},

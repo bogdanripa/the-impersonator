@@ -261,6 +261,8 @@ export const conversations = pgTable("conversations", {
   personaId: uuid("persona_id").notNull().references(() => personas.id, { onDelete: "cascade" }),
   personaVersion: integer("persona_version").notNull(),
   title: text("title"),
+  /** When the short title was generated from the conversation; null while the title is still the first question. */
+  titleGeneratedAt: timestamp("title_generated_at", { withTimezone: true }),
   createdBy: text("created_by"),
   createdAt: createdAt(),
   /** The conversation this one was copied from, when a teammate continued a shared conversation. */
@@ -282,7 +284,7 @@ export const messages = pgTable(
     insightIds: jsonb("insight_ids").$type<string[]>().notNull().default([]),
     storyIds: jsonb("story_ids").$type<string[]>().notNull().default([]),
     /** The reply split into blocks, each with its own evidence (for per-paragraph highlighting). */
-    segments: jsonb("segments").$type<{ text: string; insightIds: string[]; storyIds: string[]; liveIds?: string[]; noEvidence: boolean }[]>(),
+    segments: jsonb("segments").$type<{ text: string; insightIds: string[]; storyIds: string[]; liveIds?: string[]; noEvidence: boolean; guess?: boolean }[]>(),
     /** Live-retrieved evidence this reply cites (see live_evidence). */
     liveIds: jsonb("live_ids").$type<string[]>().notNull().default([]),
     /** True when the reply cited no valid evidence. Shown as a warning, never as fact. */
@@ -395,3 +397,19 @@ export const personaGaps = pgTable(
   },
   (t) => [index("persona_gaps_persona").on(t.personaId)],
 );
+
+/**
+ * Files the team uploaded for a persona (e.g. LinkedIn's "Save to PDF" export of the anchor's
+ * profile). Only the extracted text is kept. Research reads it as source `attachment:<id>`.
+ */
+export const attachments = pgTable("attachments", {
+  id: id(),
+  personaId: uuid("persona_id").notNull().references(() => personas.id, { onDelete: "cascade" }),
+  filename: text("filename").notNull(),
+  contentType: text("content_type").notNull(),
+  sizeBytes: integer("size_bytes").notNull(),
+  title: text("title"),
+  text: text("text").notNull(),
+  uploadedBy: text("uploaded_by"),
+  createdAt: createdAt(),
+});

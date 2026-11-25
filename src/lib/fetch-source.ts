@@ -4,6 +4,7 @@ import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { createHash } from "node:crypto";
 import { extractText, getDocumentProxy } from "unpdf";
+import { attachmentId, getAttachmentText } from "@/lib/attachments";
 
 const MAX_BYTES = 5 * 1024 * 1024;
 const MAX_PDF_BYTES = 40 * 1024 * 1024; // annual reports are large
@@ -12,7 +13,7 @@ const MAX_PDF_CHARS = 2_000_000;
 const MIN_CHARS = 1_500;
 const TIMEOUT_MS = 20_000;
 
-export type FetchedSource = { title: string | null; text: string; hash: string };
+export type FetchedSource = { title: string | null; text: string; hash: string; via?: "direct" | "renderer" };
 
 function isPrivateAddress(ip: string): boolean {
   if (ip.includes(":")) {
@@ -67,7 +68,7 @@ async function readCapped(res: Response, maxBytes: number): Promise<Uint8Array> 
  * Extracts a PDF's text page by page. Words split across lines with a hyphen ("mar-\nketing")
  * are rejoined so quotes from reports can be verified verbatim.
  */
-async function pdfToText(bytes: Uint8Array): Promise<{ title: string | null; text: string }> {
+export async function pdfToText(bytes: Uint8Array): Promise<{ title: string | null; text: string }> {
   const pdf = await getDocumentProxy(bytes, { verbosity: 0 });
   const { text: pages } = await extractText(pdf, { mergePages: false });
   let title: string | null = null;
@@ -112,30 +113,117 @@ function htmlToText(html: string, url: string): { title: string | null; text: st
   return { title, text };
 }
 
+const USER_AGENT = "Mozilla/5.0 (compatible; TheImpersonator/1.0; +https://the-impersonator.vercel.app; fetching a page on a user's request)";
+const RENDERER = "https://r.jina.ai/";
+
+/** The site asked for a login: we never get past one. Upload a PDF of the page instead. */
+export class LoginWallError extends Error {
+  constructor(url: URL) {
+    super(
+      `${url.hostname} shows this page only after signing in, so it can't be read automatically. ` +
+        `Save it as a PDF (on LinkedIn: More → Save to PDF) and upload it instead.`,
+    );
+  }
+}
+
+const LOGIN_PATH = /\/(authwall|login|log-in|signin|sign-in|signup|sign-up|checkpoint|uas\/login|accounts\/login)\b/i;
+/** Sites that show profiles and posts only to signed-in members. */
+const MEMBERS_ONLY = /(^|\.)(linkedin\.com|facebook\.com|instagram\.com)$/i;
+
+function looksLikeLoginWall(text: string) {
+  const t = text.slice(0, 4000).toLowerCase();
+  return (
+    text.length < 3000 &&
+    /((sign|log) in|join) to (see|view|continue|read)|agree & join|join now to see/.test(t)
+  );
+}
+
+/** Statuses that usually mean "bot protection", not "this page is private". */
+const RETRY_VIA_RENDERER = new Set([403, 429, 503, 520, 521, 522, 523, 524, 999]);
+
+/**
+ * Reads a public page through a headless-browser reader service (Jina Reader). Used when the
+ * page needs JavaScript or the site's bot protection turned away our plain request. Never for
+ * pages behind a login or paywall.
+ */
+async function renderPage(url: URL): Promise<{ title: string | null; text: string }> {
+  const headers: Record<string, string> = { accept: "application/json", "x-return-format": "text", "x-timeout": "25" };
+  if (process.env.JINA_API_KEY) headers.authorization = `Bearer ${process.env.JINA_API_KEY}`;
+  const res = await fetch(`${RENDERER}${url.toString()}`, { headers, signal: AbortSignal.timeout(40_000) });
+  if (!res.ok) throw new Error(`reader service HTTP ${res.status}`);
+  const body = (await res.json().catch(() => null)) as { data?: { title?: string; text?: string; content?: string; url?: string; finalUrl?: string } } | null;
+  const text = (body?.data?.text ?? body?.data?.content ?? "")
+    .replace(/[ \t\u00a0]+/g, " ")
+    .replace(/\n\s*\n+/g, "\n\n")
+    .trim();
+  const finalUrl = new URL(body?.data?.finalUrl || body?.data?.url || url.toString());
+  if (LOGIN_PATH.test(finalUrl.pathname) || looksLikeLoginWall(text)) throw new LoginWallError(url);
+  return { title: body?.data?.title?.trim() || null, text };
+}
+
 /**
  * Fetches a page ourselves (never from model memory) and returns its readable text.
+ * Every fetch is for a page a user or a research run asked for (like ChatGPT-User), so robots.txt
+ * doesn't apply; we identify ourselves honestly instead. Pages that need JavaScript or that bot
+ * protection turned away are read through a headless-browser reader. Login walls are respected.
  * Throws on anything we can't read in full, so no source is ever summarized from nothing.
+ * `attachment:<id>` reads a file the team uploaded.
  */
 export async function fetchSource(rawUrl: string): Promise<FetchedSource> {
+  const uploaded = attachmentId(rawUrl);
+  if (uploaded) return getAttachmentText(uploaded);
+
   let url = await assertPublicUrl(rawUrl);
+  if (MEMBERS_ONLY.test(url.hostname) && LOGIN_PATH.test(url.pathname)) throw new LoginWallError(url);
   let res: Response | null = null;
-  for (let hop = 0; hop < 5; hop++) {
-    res = await fetch(url, {
-      redirect: "manual",
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-      headers: {
-        "user-agent": "Mozilla/5.0 (compatible; TheImpersonatorResearch/0.1)",
-        accept: "text/html,application/xhtml+xml,application/pdf;q=0.9,text/plain;q=0.8",
-      },
-    });
-    const location = res.headers.get("location");
-    if (res.status >= 300 && res.status < 400 && location) {
-      url = await assertPublicUrl(new URL(location, url).toString());
-      continue;
+  let networkError: Error | null = null;
+  try {
+    for (let hop = 0; hop < 5; hop++) {
+      res = await fetch(url, {
+        redirect: "manual",
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+        headers: {
+          "user-agent": USER_AGENT,
+          accept: "text/html,application/xhtml+xml,application/pdf;q=0.9,text/plain;q=0.8",
+          "accept-language": "en",
+        },
+      });
+      const location = res.headers.get("location");
+      if (res.status >= 300 && res.status < 400 && location) {
+        const next = new URL(location, url);
+        if (LOGIN_PATH.test(next.pathname)) throw new LoginWallError(url);
+        url = await assertPublicUrl(next.toString());
+        continue;
+      }
+      break;
     }
-    break;
+  } catch (err) {
+    if (err instanceof LoginWallError) throw err;
+    networkError = err as Error;
   }
-  if (!res || !res.ok) throw new Error(`HTTP ${res?.status ?? "error"} fetching page`);
+
+  const viaRenderer = async (why: string): Promise<FetchedSource> => {
+    if (MEMBERS_ONLY.test(url.hostname)) throw new LoginWallError(url);
+    let rendered: { title: string | null; text: string };
+    try {
+      rendered = await renderPage(url);
+    } catch (err) {
+      if (err instanceof LoginWallError) throw err;
+      throw new Error(`${why}; the reader service couldn't read it either (${(err as Error).message})`);
+    }
+    if (rendered.text.length < MIN_CHARS) {
+      throw new Error(`${why}; the reader service found only ${rendered.text.length} characters of text (likely paywalled or video-only)`);
+    }
+    const clipped = rendered.text.slice(0, MAX_CHARS);
+    return { title: rendered.title, text: clipped, hash: createHash("sha256").update(clipped).digest("hex"), via: "renderer" };
+  };
+
+  if (networkError || !res) return viaRenderer(`Couldn't connect (${networkError?.message ?? "error"})`);
+  if (res.status === 401 || res.status === 407) throw new LoginWallError(url);
+  if (!res.ok) {
+    if (RETRY_VIA_RENDERER.has(res.status)) return viaRenderer(`HTTP ${res.status} fetching page`);
+    throw new Error(`HTTP ${res.status} fetching page`);
+  }
   const type = res.headers.get("content-type") ?? "";
   const isPdf = /application\/pdf/.test(type) || (/application\/octet-stream/.test(type) && /\.pdf$/i.test(url.pathname));
   if (!isPdf && !/text\/html|application\/xhtml|text\/plain/.test(type)) throw new Error(`Unsupported content type: ${type || "unknown"}`);
@@ -149,14 +237,13 @@ export async function fetchSource(rawUrl: string): Promise<FetchedSource> {
   } else {
     const body = new TextDecoder().decode(bytes);
     ({ title, text } = type.includes("text/plain") ? { title: null, text: body.trim() } : htmlToText(body, url.toString()));
+    if (looksLikeLoginWall(text)) throw new LoginWallError(url);
   }
   if (text.length < MIN_CHARS) {
-    throw new Error(
-      isPdf
-        ? `Only ${text.length} characters of text in the PDF (likely a scanned image)`
-        : `Only ${text.length} characters of readable text (likely paywalled, video-only or blocked)`,
-    );
+    if (isPdf) throw new Error(`Only ${text.length} characters of text in the PDF (likely a scanned image)`);
+    // Little text in a page that loaded fine: usually a JavaScript app. Render it.
+    return viaRenderer(`Only ${text.length} characters of readable text without JavaScript`);
   }
   const clipped = text.slice(0, isPdf ? MAX_PDF_CHARS : MAX_CHARS);
-  return { title, text: clipped, hash: createHash("sha256").update(clipped).digest("hex") };
+  return { title, text: clipped, hash: createHash("sha256").update(clipped).digest("hex"), via: "direct" };
 }

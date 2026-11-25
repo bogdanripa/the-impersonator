@@ -2,6 +2,7 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { checkSource, importSeedPersona, SeedPersonaSchema, type SourceCheck } from "@/lib/seed";
 import { timingSafeEqual } from "@/lib/auth";
+import { attachmentUrl } from "@/lib/attachments";
 
 /** Bearer-token check for the routine-facing API (RESEARCH_API_TOKEN). */
 export function researchApiAuthorized(request: Request): boolean {
@@ -34,7 +35,18 @@ export async function researchContext(personaId: string) {
     .select({ url: schema.sources.url, tier: schema.sources.tier, status: schema.sources.status, error: schema.sources.error })
     .from(schema.sources)
     .where(eq(schema.sources.personaId, personaId));
-  return { persona_id: persona.id, version: persona.version, icp: persona.icp, known_sources: sources };
+  const files = await db
+    .select({ id: schema.attachments.id, filename: schema.attachments.filename, title: schema.attachments.title, uploadedBy: schema.attachments.uploadedBy })
+    .from(schema.attachments)
+    .where(eq(schema.attachments.personaId, personaId));
+  return {
+    persona_id: persona.id,
+    version: persona.version,
+    icp: persona.icp,
+    known_sources: sources,
+    // Files the team uploaded (e.g. the anchor's LinkedIn profile export). Read with fetch-text.
+    uploaded_files: files.map((f) => ({ url: attachmentUrl(f.id), filename: f.filename, title: f.title, uploaded_by: f.uploadedBy })),
+  };
 }
 
 // ---- Server-side verification + import (called from workflow steps) ----

@@ -13,12 +13,13 @@ import { CompanyLogo, PersonaPhoto, type CardPersona } from "@/components/person
 type Message = {
   id: string; role: string; content: string; innerThought: string | null;
   insightIds: string[]; storyIds: string[]; ungrounded: boolean; createdAt: string;
-  segments: { text: string; insightIds: string[]; storyIds: string[]; liveIds?: string[]; noEvidence: boolean }[] | null;
+  segments: { text: string; insightIds: string[]; storyIds: string[]; liveIds?: string[]; noEvidence: boolean; guess?: boolean }[] | null;
   liveIds?: string[];
 };
 type Live = { id: string; url: string; title: string | null; quote: string; speaker: string; isAnchor: boolean; retrievedAt: string; query: string };
 type Conversation = {
-  id: string; personaId: string; personaVersion: number; title: string | null; createdBy: string | null; createdAt: string;
+  id: string; personaId: string; personaVersion: number; title: string | null; titleGeneratedAt: string | null;
+  createdBy: string | null; createdAt: string;
   forkedFrom: string | null; forkedFromBy: string | null;
   /** null (idle) | thinking (reply being written on the server) | failed */
   replyStatus: string | null; replyError: string | null;
@@ -192,6 +193,18 @@ export default function ChatView() {
   const idx = useMemo(() => (persona ? buildIndex(persona) : null), [persona]);
   const icp = persona?.persona.icp;
   const name = icp?.anchor_name ?? persona?.persona.name ?? "";
+  // The short generated title (2-3 words), once the conversation has one.
+  const topic = conversation?.titleGeneratedAt ? conversation.title : null;
+
+  // The tab title is also the browser's file name when printing / saving as PDF.
+  useEffect(() => {
+    if (!name) return;
+    const previous = document.title;
+    document.title = topic ? `${topic} - ${name}` : `Conversation with ${name}`;
+    return () => {
+      document.title = previous;
+    };
+  }, [topic, name]);
 
   async function send(raw: string) {
     const msg = raw.trim();
@@ -282,7 +295,10 @@ export default function ChatView() {
         </Link>
         <Avatar persona={persona.persona} size="md" />
         <div className="min-w-0 flex-1">
-          <div className="truncate font-semibold leading-tight">{name}</div>
+          <div className="truncate font-semibold leading-tight">
+            {name}
+            {topic && <span className="font-normal text-zinc-500"> · {topic}</span>}
+          </div>
           <div className="truncate text-xs text-zinc-500">
             {icp ? `${icp.anchor_role} · ${icp.anchor_company}` : "Simulation from public statements"}
             {conversation && conversation.personaVersion !== persona.persona.version && " · earlier persona version"}
@@ -364,6 +380,7 @@ export default function ChatView() {
                 <div className="flex items-center gap-2"><TierBadge tier="company" /> official company material</div>
                 <div className="flex items-center gap-2"><TierBadge tier="peer" /> similar people, never their own experience</div>
                 <div className="flex items-center gap-2"><TierBadge tier="live" /> looked up online during this chat, verified against the page</div>
+                <div className="flex items-center gap-2"><TierBadge tier="guess" /> not public: a typical answer for someone like them, averaged from peers and the industry</div>
                 <p className="text-zinc-500">Replies that cite no evidence are flagged as ungrounded. Each conversation starts fresh.</p>
               </div>
             </>
@@ -383,8 +400,11 @@ export default function ChatView() {
         <div className="mx-auto w-full max-w-3xl space-y-6 px-3 py-4 sm:px-4 sm:py-6 print:max-w-none print:px-0 print:py-0">
           {/* Printout heading: who, when, and what this is. */}
           <div className="hidden border-b border-zinc-300 pb-3 print:block">
-            <div className="text-lg font-semibold">Conversation with {name}</div>
-            {icp && <div className="text-sm text-zinc-600">{icp.anchor_role} · {icp.anchor_company}</div>}
+            <div className="text-lg font-semibold">{topic ?? `Conversation with ${name}`}</div>
+            <div className="text-sm text-zinc-600">
+              {topic && `${name} · `}
+              {icp && `${icp.anchor_role} · ${icp.anchor_company}`}
+            </div>
             <div className="mt-1 text-xs text-zinc-500">
               {conversation?.createdAt ? `Started ${new Date(conversation.createdAt).toLocaleString()}` : ""}
               {conversation?.createdBy ? ` by ${conversation.createdBy}` : ""}
@@ -540,6 +560,7 @@ const TIER_HIGHLIGHT: Record<string, string> = {
   company: "bg-indigo-500/15 ring-1 ring-indigo-500/40",
   peer: "bg-amber-500/15 ring-1 ring-amber-500/40",
   live: "bg-sky-500/15 ring-1 ring-sky-500/40",
+  guess: "bg-fuchsia-500/15 ring-1 ring-fuchsia-500/40",
 };
 
 function PersonaMessage({
@@ -557,9 +578,11 @@ function PersonaMessage({
     return t;
   };
   const liveIds = m.liveIds ?? [];
-  const tiers = tiersOf(m.insightIds, m.storyIds, liveIds);
-  const n = m.insightIds.length + m.storyIds.length + liveIds.length;
   const segments = m.segments?.length ? m.segments : null;
+  const tiers = tiersOf(m.insightIds, m.storyIds, liveIds);
+  const guessed = !!segments?.some((s) => s.guess);
+  if (guessed) tiers.add("guess");
+  const n = m.insightIds.length + m.storyIds.length + liveIds.length;
 
   return (
     <div className="flex gap-2 sm:gap-3">
@@ -579,15 +602,19 @@ function PersonaMessage({
             <div className="space-y-2">
               {segments.map((seg, i) => {
                 const segTiers = tiersOf(seg.insightIds, seg.storyIds, seg.liveIds ?? []);
+                if (seg.guess) segTiers.add("guess");
                 const cited = seg.insightIds.length + seg.storyIds.length + (seg.liveIds?.length ?? 0) > 0;
+                const unsupported = !cited && !seg.noEvidence && !seg.guess;
                 const lit = hoverTier && segTiers.has(hoverTier);
                 return (
                   <div
                     key={i}
-                    title={!cited && !seg.noEvidence ? "No evidence cited for this paragraph" : undefined}
+                    title={seg.guess ? "Unconfirmed: typical for people like them, not something they said" : unsupported ? "No evidence cited for this paragraph" : undefined}
                     className={`-mx-2 break-inside-avoid rounded-md px-2 py-0.5 transition ${
                       hoverTier ? (lit ? TIER_HIGHLIGHT[hoverTier] : "opacity-35") : ""
-                    } ${!cited && !seg.noEvidence ? "border-l-2 border-dashed border-red-400/70" : ""}`}
+                    } ${unsupported ? "border-l-2 border-dashed border-red-400/70" : ""} ${
+                      seg.guess ? "border-l-2 border-dotted border-fuchsia-500/70" : ""
+                    }`}
                   >
                     <Markdown>{seg.text}</Markdown>
                   </div>
@@ -603,13 +630,17 @@ function PersonaMessage({
             <span className="rounded bg-red-100 px-1.5 py-0.5 font-medium text-red-700 dark:bg-red-950 dark:text-red-300">
               ⚠ Ungrounded: cites no evidence. Don&apos;t treat as fact.
             </span>
-          ) : n === 0 ? (
+          ) : n === 0 && !guessed ? (
             <span>No public evidence on this; they said so.</span>
           ) : (
             <>
-              <button onClick={() => setOpen((v) => !v)} className="py-1 underline underline-offset-2 hover:text-zinc-900 dark:hover:text-zinc-100 print:no-underline">
-                {open ? "Hide" : "Grounded in"} {n} {n === 1 ? "quote" : "quotes"}
-              </button>
+              {n > 0 ? (
+                <button onClick={() => setOpen((v) => !v)} className="py-1 underline underline-offset-2 hover:text-zinc-900 dark:hover:text-zinc-100 print:no-underline">
+                  {open ? "Hide" : "Grounded in"} {n} {n === 1 ? "quote" : "quotes"}
+                </button>
+              ) : (
+                <span>Not public; an unconfirmed, typical answer.</span>
+              )}
               {[...tiers].map((t) => (
                 <span
                   key={t}
