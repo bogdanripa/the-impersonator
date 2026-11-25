@@ -796,8 +796,9 @@ function SoulView({ data, act, personaId }: { data: PersonaData; act: (fn: () =>
   };
   const { phrases, scales, lightsUpOn, deflects } = soul.sheet;
   return (
-    <div className="grid gap-8 lg:grid-cols-[1fr_280px]">
-      <div className="space-y-6">
+    // minmax(0, …): Safari otherwise widens the column to fit a table or code block in the text.
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-8 lg:grid-cols-[minmax(0,1fr)_280px]">
+      <div className="min-w-0 space-y-6">
         <p className="text-xs text-zinc-500">
           Written in their voice, only from their own words and their company&apos;s material. Every section cites its quotes.
         </p>
@@ -811,7 +812,7 @@ function SoulView({ data, act, personaId }: { data: PersonaData; act: (fn: () =>
           </section>
         ))}
       </div>
-      <aside className="space-y-6 lg:sticky lg:top-4 lg:self-start">
+      <aside className="min-w-0 space-y-6 lg:sticky lg:top-4 lg:self-start">
         <Button variant="secondary" onClick={download}>Download SOUL.md</Button>
         <div>
           <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">Temperament</h3>
