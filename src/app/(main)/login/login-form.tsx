@@ -20,6 +20,9 @@ export default function LoginForm() {
       >
         Sign in with Google
       </a>
+      <p>
+        <a href="/welcome" className="text-sm text-zinc-500 underline underline-offset-2">What is The Impersonator?</a>
+      </p>
     </div>
   );
 }

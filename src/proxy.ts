@@ -4,17 +4,21 @@ import { SESSION_COOKIE, readSession } from "@/lib/auth";
 /** Google sign-in gate. Passes who the viewer is, and which space they belong to, to the routes. */
 export async function proxy(request: NextRequest) {
   const session = await readSession(request.cookies.get(SESSION_COOKIE)?.value);
+  const path = request.nextUrl.pathname;
+  // The marketing page is for visitors: signed-out "/" shows it; signed-in users go to the app.
+  if (path === "/welcome") return session ? NextResponse.redirect(new URL("/", request.url)) : NextResponse.next();
+  if (!session && path === "/") return NextResponse.rewrite(new URL("/welcome", request.url));
   if (session) {
     const headers = new Headers(request.headers);
     headers.set("x-user-email", session.email);
     headers.set("x-user-org", session.org);
     return NextResponse.next({ request: { headers } });
   }
-  if (request.nextUrl.pathname.startsWith("/api/")) {
+  if (path.startsWith("/api/")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const login = new URL("/login", request.url);
-  login.searchParams.set("next", request.nextUrl.pathname);
+  login.searchParams.set("next", path);
   return NextResponse.redirect(login);
 }
 
