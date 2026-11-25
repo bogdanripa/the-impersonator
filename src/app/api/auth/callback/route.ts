@@ -1,14 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createRemoteJWKSet, jwtVerify } from "jose";
-import {
-  ALLOWED_DOMAINS,
-  OAUTH_COOKIE,
-  SESSION_COOKIE,
-  appOrigin,
-  isAllowedEmail,
-  readOauthState,
-  signSession,
-} from "@/lib/auth";
+import { OAUTH_COOKIE, SESSION_COOKIE, appOrigin, readOauthState, signSession } from "@/lib/auth";
+import { orgFor } from "@/lib/org";
 
 const googleJwks = createRemoteJWKSet(new URL("https://www.googleapis.com/oauth2/v3/certs"));
 
@@ -55,14 +48,16 @@ export async function GET(request: NextRequest) {
 
   const email = String(claims.email ?? "").toLowerCase();
   const hostedDomain = String(claims.hd ?? "").toLowerCase();
-  // Require a verified email AND a Google Workspace account (hd claim) on an allowed domain.
-  if (claims.email_verified !== true || !isAllowedEmail(email) || !ALLOWED_DOMAINS.includes(hostedDomain)) {
-    return fail(request, `Only ${ALLOWED_DOMAINS.map((d) => `@${d}`).join(" and ")} Google accounts can sign in.`);
+  // Any Google account with a verified email. Workspace accounts (hd claim) share a space with their
+  // company domain; personal accounts get a private one.
+  if (claims.email_verified !== true || !email.includes("@")) {
+    return fail(request, "This Google account's email address isn't verified.");
   }
+  const org = orgFor(email, hostedDomain || null);
 
   const res = NextResponse.redirect(new URL(saved.next, appOrigin(request.url)));
   res.cookies.delete({ name: OAUTH_COOKIE, path: "/api/auth" });
-  res.cookies.set(SESSION_COOKIE, await signSession({ email, name: String(claims.name ?? email) }), {
+  res.cookies.set(SESSION_COOKIE, await signSession({ email, name: String(claims.name ?? email), org }), {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",

@@ -1,9 +1,11 @@
 import { eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
+import { findPersona } from "@/lib/access";
 
 /** Serves the stored logo (signed-in users only, via the proxy gate). */
-export async function GET(_request: Request, ctx: RouteContext<"/api/personas/[id]/logo">) {
+export async function GET(request: Request, ctx: RouteContext<"/api/personas/[id]/logo">) {
   const { id } = await ctx.params;
+  if (!(await findPersona(request, id))) return new Response(null, { status: 404 });
   const [row] = await db
     .select({ data: schema.personas.logoData, type: schema.personas.logoType })
     .from(schema.personas)

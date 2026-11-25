@@ -2,14 +2,15 @@ import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { start } from "workflow/api";
 import { db, schema } from "@/lib/db";
+import { findPersona } from "@/lib/access";
 import { handleError, jsonError } from "@/lib/http";
 import { discoverWorkflow } from "@/workflows/research";
 
 /** Confirms the ICP and starts discovery of real interviews. */
-export async function POST(_request: Request, ctx: RouteContext<"/api/personas/[id]/research">) {
+export async function POST(request: Request, ctx: RouteContext<"/api/personas/[id]/research">) {
   try {
     const { id } = await ctx.params;
-    const persona = await db.query.personas.findFirst({ where: eq(schema.personas.id, id) });
+    const persona = await findPersona(request, id);
     if (!persona) return jsonError("Persona not found", 404);
     if (!persona.icp) return jsonError("Define the ICP first");
     if (!["draft", "reviewing", "ready", "failed"].includes(persona.status)) {

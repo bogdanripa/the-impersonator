@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
+import { findPersona } from "@/lib/access";
 import { handleError, jsonError } from "@/lib/http";
 
 /** Manually add an interview URL. It's verified exactly like discovered sources. */
@@ -16,7 +16,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/personas/[i
     } catch {
       return jsonError("Enter a valid http(s) URL");
     }
-    const persona = await db.query.personas.findFirst({ where: eq(schema.personas.id, id) });
+    const persona = await findPersona(request, id);
     if (!persona) return jsonError("Persona not found", 404);
     const [row] = await db
       .insert(schema.sources)

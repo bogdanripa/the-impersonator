@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
+import { findPersona } from "@/lib/access";
 import { handleError, jsonError } from "@/lib/http";
 
 /** Approve or reject a candidate source. */
@@ -10,7 +11,7 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/sources/[i
     const { status } = (await request.json().catch(() => ({}))) as { status?: string };
     if (status !== "approved" && status !== "rejected") return jsonError("status must be approved or rejected");
     const source = await db.query.sources.findFirst({ where: eq(schema.sources.id, id) });
-    if (!source) return jsonError("Source not found", 404);
+    if (!source || !(await findPersona(request, source.personaId))) return jsonError("Source not found", 404);
     if (!["candidate", "approved", "rejected"].includes(source.status)) {
       return jsonError("This source has already been processed", 409);
     }

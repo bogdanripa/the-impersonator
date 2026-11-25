@@ -1,3 +1,4 @@
+import { findPersona } from "@/lib/access";
 import { NextResponse } from "next/server";
 import { handleError, jsonError } from "@/lib/http";
 import { appOrigin } from "@/lib/auth";
@@ -9,6 +10,7 @@ export const maxDuration = 60;
 export async function POST(request: Request, ctx: RouteContext<"/api/personas/[id]/deep-research">) {
   try {
     const { id } = await ctx.params;
+    if (!(await findPersona(request, id))) return jsonError("Persona not found", 404);
     const res = await startDeepResearch(id, { requestedBy: request.headers.get("x-user-email"), origin: appOrigin(request.url) });
     return NextResponse.json({ ok: true, ...res });
   } catch (err) {

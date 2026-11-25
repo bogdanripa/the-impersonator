@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import { desc, sql } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
+import { viewerOrg } from "@/lib/access";
 import { db, schema } from "@/lib/db";
 import { handleError } from "@/lib/http";
 import { processResearchQueue, queuePositions } from "@/lib/research-queue";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     // Opportunistically keep the research queue moving.
     await processResearchQueue().catch((err) => console.error("Research queue", err));
@@ -25,6 +26,7 @@ export async function GET() {
         updatedAt: schema.personas.updatedAt,
       })
       .from(schema.personas)
+      .where(eq(schema.personas.org, viewerOrg(request)))
       .orderBy(desc(schema.personas.updatedAt));
     return NextResponse.json({ personas: rows.map((r) => ({ ...r, queuePosition: queue.get(r.id) ?? null })) });
   } catch (err) {
@@ -36,7 +38,7 @@ export async function POST(request: Request) {
   try {
     const [persona] = await db
       .insert(schema.personas)
-      .values({ createdBy: request.headers.get("x-user-email") })
+      .values({ org: viewerOrg(request), createdBy: request.headers.get("x-user-email") })
       .returning({ id: schema.personas.id });
     return NextResponse.json({ id: persona.id });
   } catch (err) {

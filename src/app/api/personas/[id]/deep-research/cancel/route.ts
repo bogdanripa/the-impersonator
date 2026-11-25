@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
+import { findPersona } from "@/lib/access";
 import { handleError, jsonError } from "@/lib/http";
 import { latestRun, updateRun } from "@/lib/research-runs";
 import { processResearchQueue } from "@/lib/research-queue";
@@ -13,7 +14,7 @@ import { processResearchQueue } from "@/lib/research-queue";
 export async function POST(request: Request, ctx: RouteContext<"/api/personas/[id]/deep-research/cancel">) {
   try {
     const { id } = await ctx.params;
-    const persona = await db.query.personas.findFirst({ where: eq(schema.personas.id, id) });
+    const persona = await findPersona(request, id);
     if (!persona) return jsonError("Persona not found", 404);
     const run = await latestRun(id);
     if (run && ["requested", "researching"].includes(run.status)) {

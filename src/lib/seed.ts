@@ -221,6 +221,7 @@ export async function findExistingPersona(icp: Icp) {
       and(
         sql`lower(${schema.personas.icp}->>'anchor_name') = lower(${icp.anchor_name})`,
         sql`lower(${schema.personas.icp}->>'anchor_company') = lower(${icp.anchor_company})`,
+        process.env.SEED_ORG ? eq(schema.personas.org, process.env.SEED_ORG.trim().toLowerCase()) : undefined,
       ),
     );
 }
@@ -254,12 +255,16 @@ export async function importSeedPersona(
       .returning();
   } else {
     const { icp } = seed;
+    // Seeded personas belong to one space: a company domain, or a personal email address.
+    const org = process.env.SEED_ORG?.trim().toLowerCase();
+    if (!org) throw new Error("Set SEED_ORG to the space that should own seeded personas, e.g. SEED_ORG=example.com");
     [persona] = await db
       .insert(schema.personas)
       .values({
         name: icp.persona_name,
         icp,
         status: "synthesizing",
+        org,
         createdBy: "seed",
         builderMessages: [{ role: "assistant", content: "This persona was researched offline and seeded with verified evidence.", icp }],
       })

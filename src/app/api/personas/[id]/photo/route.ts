@@ -1,9 +1,11 @@
 import { eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
+import { findPersona } from "@/lib/access";
 
 /** Serves the stored photo (signed-in users only, via the proxy gate). */
-export async function GET(_request: Request, ctx: RouteContext<"/api/personas/[id]/photo">) {
+export async function GET(request: Request, ctx: RouteContext<"/api/personas/[id]/photo">) {
   const { id } = await ctx.params;
+  if (!(await findPersona(request, id))) return new Response(null, { status: 404 });
   const [row] = await db
     .select({ data: schema.personas.photoData, type: schema.personas.photoType })
     .from(schema.personas)

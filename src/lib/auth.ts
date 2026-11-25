@@ -1,14 +1,11 @@
 import { SignJWT, jwtVerify } from "jose";
+import { orgFor, orgForDomain } from "@/lib/org";
 
 export const SESSION_COOKIE = "imp_session";
 export const OAUTH_COOKIE = "imp_oauth";
 
-export const ALLOWED_DOMAINS = (process.env.ALLOWED_EMAIL_DOMAINS ?? "genezio.com,genez.io")
-  .split(",")
-  .map((d) => d.trim().toLowerCase())
-  .filter(Boolean);
-
-export type Session = { email: string; name: string };
+/** Any verified Google account can sign in; what it sees is scoped by its space (see org.ts). */
+export type Session = { email: string; name: string; org: string };
 
 function secret(): Uint8Array {
   const s = process.env.AUTH_SECRET;
@@ -18,11 +15,6 @@ function secret(): Uint8Array {
     return new TextEncoder().encode(`dev-only:${process.env.GOOGLE_CLIENT_SECRET ?? "the-impersonator"}`);
   }
   return new TextEncoder().encode(s);
-}
-
-export function isAllowedEmail(email: string): boolean {
-  const domain = email.toLowerCase().split("@")[1];
-  return !!domain && ALLOWED_DOMAINS.includes(domain);
 }
 
 export async function signSession(session: Session): Promise<string> {
@@ -38,13 +30,19 @@ export async function readSession(token: string | undefined): Promise<Session | 
   if (!token) return null;
   try {
     const { payload } = await jwtVerify(token, secret(), { audience: "session" });
-    const email = String(payload.email ?? "");
-    // Re-check the domain so tightening ALLOWED_EMAIL_DOMAINS takes effect immediately.
-    if (!isAllowedEmail(email)) return null;
-    return { email, name: String(payload.name ?? email) };
+    const email = String(payload.email ?? "").toLowerCase();
+    if (!email.includes("@")) return null;
+    // Sessions from before spaces existed were all Workspace accounts: their domain is their space.
+    const org = payload.org ? orgForSession(String(payload.org), email) : orgForDomain(email.split("@")[1]);
+    return { email, name: String(payload.name ?? email), org };
   } catch {
     return null;
   }
+}
+
+/** Re-applies domain aliases, so changing ORG_DOMAIN_ALIASES takes effect without signing in again. */
+function orgForSession(org: string, email: string): string {
+  return org.includes("@") ? orgFor(email) : orgForDomain(org);
 }
 
 /** Short-lived signed cookie carrying OAuth state + PKCE verifier between login and callback. */

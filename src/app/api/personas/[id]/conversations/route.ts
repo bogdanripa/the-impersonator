@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
+import { findPersona } from "@/lib/access";
 import { handleError, jsonError } from "@/lib/http";
 
 /** Starts a new conversation. Each one starts fresh, with no memory of others. */
 export async function POST(request: Request, ctx: RouteContext<"/api/personas/[id]/conversations">) {
   try {
     const { id } = await ctx.params;
-    const persona = await db.query.personas.findFirst({ where: eq(schema.personas.id, id) });
+    const persona = await findPersona(request, id);
     if (!persona) return jsonError("Persona not found", 404);
     if (persona.version < 1) return jsonError("This persona isn't ready yet", 409);
     const [row] = await db
@@ -27,6 +28,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/personas/[i
 export async function GET(request: Request, ctx: RouteContext<"/api/personas/[id]/conversations">) {
   try {
     const { id } = await ctx.params;
+    if (!(await findPersona(request, id))) return jsonError("Persona not found", 404);
     const q = new URL(request.url).searchParams.get("q")?.trim().slice(0, 200) ?? "";
     const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
     const rows = await db.execute<{

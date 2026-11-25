@@ -1,16 +1,17 @@
 import { NextResponse } from "next/server";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
+import { findPersona } from "@/lib/access";
 import { handleError, jsonError } from "@/lib/http";
 import type { BuilderMessage } from "@/lib/builder";
 import { latestRun } from "@/lib/research-runs";
 import { getSoul } from "@/lib/soul";
 import { queuePositions } from "@/lib/research-queue";
 
-export async function GET(_request: Request, ctx: RouteContext<"/api/personas/[id]">) {
+export async function GET(request: Request, ctx: RouteContext<"/api/personas/[id]">) {
   try {
     const { id } = await ctx.params;
-    const persona = await db.query.personas.findFirst({ where: eq(schema.personas.id, id) });
+    const persona = await findPersona(request, id);
     if (!persona) return jsonError("Persona not found", 404);
 
     const [sources, subjects, elements, insights, stories, rejections, conversations, answers] = await Promise.all([
@@ -72,9 +73,10 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/personas/[i
   }
 }
 
-export async function DELETE(_request: Request, ctx: RouteContext<"/api/personas/[id]">) {
+export async function DELETE(request: Request, ctx: RouteContext<"/api/personas/[id]">) {
   try {
     const { id } = await ctx.params;
+    if (!(await findPersona(request, id))) return jsonError("Persona not found", 404);
     await db.delete(schema.personas).where(eq(schema.personas.id, id));
     return NextResponse.json({ ok: true });
   } catch (err) {

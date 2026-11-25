@@ -2,14 +2,15 @@ import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { start } from "workflow/api";
 import { db, schema } from "@/lib/db";
+import { findPersona } from "@/lib/access";
 import { handleError, jsonError } from "@/lib/http";
 import { extractWorkflow } from "@/workflows/research";
 
 /** Fetches and verifies approved sources, then builds the persona. */
-export async function POST(_request: Request, ctx: RouteContext<"/api/personas/[id]/extract">) {
+export async function POST(request: Request, ctx: RouteContext<"/api/personas/[id]/extract">) {
   try {
     const { id } = await ctx.params;
-    const persona = await db.query.personas.findFirst({ where: eq(schema.personas.id, id) });
+    const persona = await findPersona(request, id);
     if (!persona) return jsonError("Persona not found", 404);
     if (!["reviewing", "ready", "failed"].includes(persona.status)) return jsonError("Research is already running", 409);
     const approved = await db.query.sources.findFirst({

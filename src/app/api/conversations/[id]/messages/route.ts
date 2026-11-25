@@ -2,6 +2,7 @@ import { NextResponse, after } from "next/server";
 import { and, desc, eq, isNull, lt, ne, or } from "drizzle-orm";
 import { REPLY_TIMEOUT_MS, runReply } from "@/lib/chat";
 import { db, schema } from "@/lib/db";
+import { findConversation } from "@/lib/access";
 import { handleError, jsonError } from "@/lib/http";
 
 // Also bounds the background reply started with after().
@@ -17,7 +18,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/conversatio
     const { id } = await ctx.params;
     const { text, retry } = (await request.json().catch(() => ({}))) as { text?: string; retry?: boolean };
     if (!retry && !text?.trim()) return jsonError("Message is empty");
-    const conversation = await db.query.conversations.findFirst({ where: eq(schema.conversations.id, id) });
+    const conversation = await findConversation(request, id);
     if (!conversation) return jsonError("Conversation not found", 404);
     const viewer = request.headers.get("x-user-email");
     if (conversation.createdBy && conversation.createdBy !== viewer) {

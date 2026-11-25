@@ -30,7 +30,9 @@ A chat interface for talking to a simulation of a **real, named person** who rep
 - Text only. **No audio transcription** (too expensive); discovery looks for transcript pages.
 - **Each conversation starts fresh.** No cross-conversation memory.
 - Seed personas (real people's details) never go in the repo; `seeds/` is git-ignored.
-- Sign-in: Google Workspace accounts on genezio.com / genez.io only.
+- Sign-in: any Google account. Personas and their conversations are shared per company domain
+  (Google Workspace `hd`); personal accounts (Gmail etc.) get a private space. `ORG_DOMAIN_ALIASES`
+  merges a company's domains into one space.
 - Hosting: Vercel. Models: Azure OpenAI (Responses API + web search).
 
 ## Learnings from prior work (researched 2026-11-24)

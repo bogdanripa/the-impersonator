@@ -3,12 +3,14 @@ import { asc, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { handleError, jsonError } from "@/lib/http";
 import { REPLY_TIMEOUT_MS } from "@/lib/chat";
+import { findConversation, viewerOrg } from "@/lib/access";
+import { isSharedOrg } from "@/lib/org";
 
 /** Any signed-in teammate can read a conversation; only the person who started it can continue it. */
 export async function GET(request: Request, ctx: RouteContext<"/api/conversations/[id]">) {
   try {
     const { id } = await ctx.params;
-    const conversation = await db.query.conversations.findFirst({ where: eq(schema.conversations.id, id) });
+    const conversation = await findConversation(request, id);
     if (!conversation) return jsonError("Conversation not found", 404);
     const messages = await db
       .select({
@@ -44,6 +46,8 @@ export async function GET(request: Request, ctx: RouteContext<"/api/conversation
       messages,
       canWrite,
       live,
+      // Share links only mean something where colleagues can open them.
+      shareable: isSharedOrg(viewerOrg(request)),
     });
   } catch (err) {
     return handleError(err);

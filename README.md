@@ -44,8 +44,10 @@ npm run dev
 ```
 
 Google OAuth client: add `http://localhost:3000/api/auth/callback` (and the production URL's
-`/api/auth/callback`) as authorized redirect URIs. Only `ALLOWED_EMAIL_DOMAINS` Workspace accounts
-can sign in (default `genezio.com,genez.io`).
+`/api/auth/callback`) as authorized redirect URIs. Any Google account can sign in. Everyone on the
+same Google Workspace domain shares one space (its personas and conversations); a personal account
+(Gmail etc.) gets a private space. To merge a company's domains into one space, set
+`ORG_DOMAIN_ALIASES`, e.g. `genez.io=genezio.com`. Seeding needs `SEED_ORG` (the owning space).
 
 Workflow runs locally on the "local world"; inspect runs with `npx workflow web`.
 
@@ -61,5 +63,5 @@ npm run seed -- seeds/personas.json
 
 1. Create the project and add Postgres (Neon) from the Vercel Marketplace; it sets `DATABASE_URL`.
 2. Set env vars: `OPENAI_PROVIDER`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `OPENAI_MODEL`,
-   `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `AUTH_SECRET`, `ALLOWED_EMAIL_DOMAINS`, `APP_URL`.
+   `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `AUTH_SECRET`, `ORG_DOMAIN_ALIASES`, `APP_URL`.
 3. `npm run build` runs migrations before `next build`.

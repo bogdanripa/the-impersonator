@@ -27,39 +27,45 @@ export const personaStatus = pgEnum("persona_status", [
 ]);
 
 /** A persona: a composite archetype built only from verified evidence. */
-export const personas = pgTable("personas", {
-  id: id(),
-  name: text("name").notNull().default("Untitled persona"),
-  status: personaStatus("status").notNull().default("draft"),
-  statusDetail: text("status_detail"),
-  icp: jsonb("icp").$type<Icp>(),
-  /** Set while waiting in the Claude research queue (runs one at a time, oldest first). */
-  queuedAt: timestamp("queued_at", { withTimezone: true }),
-  /** Revised setup from an update chat; applied only when the update research is launched. */
-  pendingIcp: jsonb("pending_icp").$type<Icp>(),
-  /** Transcript of the ICP builder chat (replayed to the model each turn). */
-  builderMessages: jsonb("builder_messages").$type<unknown[]>().notNull().default([]),
-  /** Incremented every time the persona is re-synthesized. */
-  version: integer("version").notNull().default(0),
-  /** Persona-card description. Only set when it cites the anchor's or company's own evidence. */
-  summary: text("summary"),
-  /** SOUL.md generation for the current version: pending | generating | ready | failed. */
-  soulStatus: text("soul_status"),
-  soulError: text("soul_error"),
-  /** One-line version of the summary for cards (same evidence rules). */
-  tagline: text("tagline"),
-  /** Official headshot and company logo, stored so cards don't depend on third-party hosts. */
-  photoData: text("photo_data"),
-  photoType: text("photo_type"),
-  photoSourceUrl: text("photo_source_url"),
-  logoData: text("logo_data"),
-  logoType: text("logo_type"),
-  summaryInsightIds: jsonb("summary_insight_ids").$type<string[]>().notNull().default([]),
-  summaryStoryIds: jsonb("summary_story_ids").$type<string[]>().notNull().default([]),
-  createdBy: text("created_by"),
-  createdAt: createdAt(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const personas = pgTable(
+  "personas",
+  {
+    id: id(),
+    name: text("name").notNull().default("Untitled persona"),
+    status: personaStatus("status").notNull().default("draft"),
+    statusDetail: text("status_detail"),
+    icp: jsonb("icp").$type<Icp>(),
+    /** Set while waiting in the Claude research queue (runs one at a time, oldest first). */
+    queuedAt: timestamp("queued_at", { withTimezone: true }),
+    /** Revised setup from an update chat; applied only when the update research is launched. */
+    pendingIcp: jsonb("pending_icp").$type<Icp>(),
+    /** Transcript of the ICP builder chat (replayed to the model each turn). */
+    builderMessages: jsonb("builder_messages").$type<unknown[]>().notNull().default([]),
+    /** Incremented every time the persona is re-synthesized. */
+    version: integer("version").notNull().default(0),
+    /** Persona-card description. Only set when it cites the anchor's or company's own evidence. */
+    summary: text("summary"),
+    /** SOUL.md generation for the current version: pending | generating | ready | failed. */
+    soulStatus: text("soul_status"),
+    soulError: text("soul_error"),
+    /** One-line version of the summary for cards (same evidence rules). */
+    tagline: text("tagline"),
+    /** Official headshot and company logo, stored so cards don't depend on third-party hosts. */
+    photoData: text("photo_data"),
+    photoType: text("photo_type"),
+    photoSourceUrl: text("photo_source_url"),
+    logoData: text("logo_data"),
+    logoType: text("logo_type"),
+    summaryInsightIds: jsonb("summary_insight_ids").$type<string[]>().notNull().default([]),
+    summaryStoryIds: jsonb("summary_story_ids").$type<string[]>().notNull().default([]),
+    /** The space that owns it: a company domain (shared with colleagues) or a personal email. */
+    org: text("org").notNull(),
+    createdBy: text("created_by"),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("personas_org").on(t.org)],
+);
 
 /** A real person whose public words are used as evidence. Never chatted with directly. */
 export const subjects = pgTable(

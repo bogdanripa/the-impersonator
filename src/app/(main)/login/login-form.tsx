@@ -9,7 +9,10 @@ export default function LoginForm() {
   return (
     <div className="mx-auto mt-24 max-w-sm space-y-4 text-center">
       <h1 className="text-xl font-semibold">Sign in</h1>
-      <p className="text-sm text-zinc-500">Use your @genezio.com or @genez.io Google account.</p>
+      <p className="text-sm text-zinc-500">
+        Sign in with Google. With a company account, you share personas and conversations with colleagues on the same domain; a
+        personal account gets a private space.
+      </p>
       {error && <p className="text-sm text-red-600">{error}</p>}
       <a
         href={`/api/auth/login?next=${encodeURIComponent(next)}`}

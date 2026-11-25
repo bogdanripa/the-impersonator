@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { asc, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
+import { findConversation } from "@/lib/access";
 import { handleError, jsonError } from "@/lib/http";
 
 /**
@@ -10,7 +11,7 @@ import { handleError, jsonError } from "@/lib/http";
 export async function POST(request: Request, ctx: RouteContext<"/api/conversations/[id]/fork">) {
   try {
     const { id } = await ctx.params;
-    const source = await db.query.conversations.findFirst({ where: eq(schema.conversations.id, id) });
+    const source = await findConversation(request, id);
     if (!source) return jsonError("Conversation not found", 404);
     const viewer = request.headers.get("x-user-email");
 

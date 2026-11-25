@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { desc, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
-import { handleError } from "@/lib/http";
+import { findPersona } from "@/lib/access";
+import { handleError, jsonError } from "@/lib/http";
 
 /** Questions conversations couldn't answer from evidence. */
-export async function GET(_request: Request, ctx: RouteContext<"/api/personas/[id]/gaps">) {
+export async function GET(request: Request, ctx: RouteContext<"/api/personas/[id]/gaps">) {
   try {
     const { id } = await ctx.params;
+    if (!(await findPersona(request, id))) return jsonError("Persona not found", 404);
     const gaps = await db
       .select()
       .from(schema.personaGaps)

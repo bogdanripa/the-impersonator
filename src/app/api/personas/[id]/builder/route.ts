@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import type { BuilderMessage } from "@/lib/builder";
 import { db, schema } from "@/lib/db";
+import { findPersona } from "@/lib/access";
 import { builderTurn } from "@/lib/builder";
 import { handleError, jsonError } from "@/lib/http";
 import { sameName } from "@/lib/research";
@@ -19,7 +20,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/personas/[i
     const { id } = await ctx.params;
     const { text } = (await request.json().catch(() => ({}))) as { text?: string };
     if (!text?.trim()) return jsonError("Message is empty");
-    const persona = await db.query.personas.findFirst({ where: eq(schema.personas.id, id) });
+    const persona = await findPersona(request, id);
     if (!persona) return jsonError("Persona not found", 404);
 
     const isUpdate = persona.version > 0;

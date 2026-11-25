@@ -23,7 +23,7 @@ type Conversation = {
   /** null (idle) | thinking (reply being written on the server) | failed */
   replyStatus: string | null; replyError: string | null;
 };
-type ConversationResponse = { conversation: Conversation; messages: Message[]; canWrite: boolean; live: Live[] };
+type ConversationResponse = { conversation: Conversation; messages: Message[]; canWrite: boolean; live: Live[]; shareable: boolean };
 
 const draftKey = (id: string) => `chat-draft:${id}`;
 function readDraft(id: string) {
@@ -98,6 +98,7 @@ export default function ChatView() {
   const [showThoughts, setShowThoughts] = useState(false);
   const [showLegend, setShowLegend] = useState(false);
   const [canWrite, setCanWrite] = useState(true);
+  const [shareable, setShareable] = useState(false);
   const [live, setLive] = useState<Map<string, Live>>(new Map());
   const [copied, setCopied] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
@@ -110,6 +111,7 @@ export default function ChatView() {
     const c = await api<ConversationResponse>(`/api/conversations/${id}`);
     setConversation(c.conversation);
     setCanWrite(c.canWrite);
+    setShareable(c.shareable);
     setLive(new Map(c.live.map((l) => [l.id, l])));
     setMessages(c.messages);
     return c;
@@ -307,6 +309,7 @@ export default function ChatView() {
           >
             Badges
           </button>
+          {shareable && (
           <button
             onClick={share}
             title="Copy a link teammates can open (read-only)"
@@ -314,6 +317,7 @@ export default function ChatView() {
           >
             {copied ? "Link copied" : "Share"}
           </button>
+          )}
           <button
             onClick={() => window.print()}
             title="Print the whole conversation, or save it as a PDF"
@@ -343,7 +347,9 @@ export default function ChatView() {
                   Show inner thoughts
                 </label>
                 <MenuButton onClick={() => { setShowMenu(false); setShowLegend(true); }}>What the badges mean</MenuButton>
-                <MenuButton onClick={() => { share(); setShowMenu(false); }}>{copied ? "Link copied" : "Copy share link"}</MenuButton>
+                {shareable && (
+                  <MenuButton onClick={() => { share(); setShowMenu(false); }}>{copied ? "Link copied" : "Copy share link"}</MenuButton>
+                )}
                 <MenuButton onClick={() => { setShowMenu(false); setTimeout(() => window.print(), 50); }}>Print / save as PDF</MenuButton>
                 <MenuButton onClick={() => { setShowMenu(false); newConversation(); }}>New chat</MenuButton>
               </div>

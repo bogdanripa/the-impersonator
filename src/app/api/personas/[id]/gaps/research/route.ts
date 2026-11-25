@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { and, eq, inArray } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
+import { findPersona } from "@/lib/access";
 import { handleError, jsonError } from "@/lib/http";
 import { appOrigin } from "@/lib/auth";
 import { DeepResearchError, startDeepResearch } from "@/lib/deep-research";
@@ -11,7 +12,7 @@ export const maxDuration = 60;
 export async function POST(request: Request, ctx: RouteContext<"/api/personas/[id]/gaps/research">) {
   try {
     const { id } = await ctx.params;
-    const persona = await db.query.personas.findFirst({ where: eq(schema.personas.id, id) });
+    const persona = await findPersona(request, id);
     if (!persona?.icp) return jsonError("Persona not found", 404);
     if (persona.version < 1) return jsonError("Research the persona first", 409);
     const open = await db

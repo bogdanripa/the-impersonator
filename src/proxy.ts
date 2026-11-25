@@ -1,12 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE, readSession } from "@/lib/auth";
 
-/** Google sign-in gate: only @genezio.com / @genez.io accounts (see ALLOWED_EMAIL_DOMAINS). */
+/** Google sign-in gate. Passes who the viewer is, and which space they belong to, to the routes. */
 export async function proxy(request: NextRequest) {
   const session = await readSession(request.cookies.get(SESSION_COOKIE)?.value);
   if (session) {
     const headers = new Headers(request.headers);
     headers.set("x-user-email", session.email);
+    headers.set("x-user-org", session.org);
     return NextResponse.next({ request: { headers } });
   }
   if (request.nextUrl.pathname.startsWith("/api/")) {
