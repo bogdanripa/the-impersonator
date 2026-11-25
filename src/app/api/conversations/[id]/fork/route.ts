@@ -26,7 +26,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/conversatio
 
       const [copy] = await tx
         .insert(schema.conversations)
-        .values({ personaId: source.personaId, personaVersion: source.personaVersion, title: source.title, createdBy: viewer, forkedFrom: id })
+        .values({ personaId: source.personaId, personaVersion: source.personaVersion, title: source.title, titleGeneratedAt: source.titleGeneratedAt, createdBy: viewer, forkedFrom: id })
         .returning({ id: schema.conversations.id });
 
       const liveMap = new Map<string, string>();

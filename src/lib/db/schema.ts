@@ -255,6 +255,8 @@ export const conversations = pgTable("conversations", {
   personaId: uuid("persona_id").notNull().references(() => personas.id, { onDelete: "cascade" }),
   personaVersion: integer("persona_version").notNull(),
   title: text("title"),
+  /** When the short title was generated from the conversation; null while the title is still the first question. */
+  titleGeneratedAt: timestamp("title_generated_at", { withTimezone: true }),
   createdBy: text("created_by"),
   createdAt: createdAt(),
   /** The conversation this one was copied from, when a teammate continued a shared conversation. */

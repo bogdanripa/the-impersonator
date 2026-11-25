@@ -18,7 +18,8 @@ type Message = {
 };
 type Live = { id: string; url: string; title: string | null; quote: string; speaker: string; isAnchor: boolean; retrievedAt: string; query: string };
 type Conversation = {
-  id: string; personaId: string; personaVersion: number; title: string | null; createdBy: string | null; createdAt: string;
+  id: string; personaId: string; personaVersion: number; title: string | null; titleGeneratedAt: string | null;
+  createdBy: string | null; createdAt: string;
   forkedFrom: string | null; forkedFromBy: string | null;
   /** null (idle) | thinking (reply being written on the server) | failed */
   replyStatus: string | null; replyError: string | null;
@@ -190,6 +191,18 @@ export default function ChatView() {
   const idx = useMemo(() => (persona ? buildIndex(persona) : null), [persona]);
   const icp = persona?.persona.icp;
   const name = icp?.anchor_name ?? persona?.persona.name ?? "";
+  // The short generated title (2-3 words), once the conversation has one.
+  const topic = conversation?.titleGeneratedAt ? conversation.title : null;
+
+  // The tab title is also the browser's file name when printing / saving as PDF.
+  useEffect(() => {
+    if (!name) return;
+    const previous = document.title;
+    document.title = topic ? `${topic} - ${name}` : `Conversation with ${name}`;
+    return () => {
+      document.title = previous;
+    };
+  }, [topic, name]);
 
   async function send(raw: string) {
     const msg = raw.trim();
@@ -280,7 +293,10 @@ export default function ChatView() {
         </Link>
         <Avatar persona={persona.persona} size="md" />
         <div className="min-w-0 flex-1">
-          <div className="truncate font-semibold leading-tight">{name}</div>
+          <div className="truncate font-semibold leading-tight">
+            {name}
+            {topic && <span className="font-normal text-zinc-500"> · {topic}</span>}
+          </div>
           <div className="truncate text-xs text-zinc-500">
             {icp ? `${icp.anchor_role} · ${icp.anchor_company}` : "Simulation from public statements"}
             {conversation && conversation.personaVersion !== persona.persona.version && " · earlier persona version"}
@@ -377,8 +393,11 @@ export default function ChatView() {
         <div className="mx-auto w-full max-w-3xl space-y-6 px-3 py-4 sm:px-4 sm:py-6 print:max-w-none print:px-0 print:py-0">
           {/* Printout heading: who, when, and what this is. */}
           <div className="hidden border-b border-zinc-300 pb-3 print:block">
-            <div className="text-lg font-semibold">Conversation with {name}</div>
-            {icp && <div className="text-sm text-zinc-600">{icp.anchor_role} · {icp.anchor_company}</div>}
+            <div className="text-lg font-semibold">{topic ?? `Conversation with ${name}`}</div>
+            <div className="text-sm text-zinc-600">
+              {topic && `${name} · `}
+              {icp && `${icp.anchor_role} · ${icp.anchor_company}`}
+            </div>
             <div className="mt-1 text-xs text-zinc-500">
               {conversation?.createdAt ? `Started ${new Date(conversation.createdAt).toLocaleString()}` : ""}
               {conversation?.createdBy ? ` by ${conversation.createdBy}` : ""}
