@@ -45,8 +45,9 @@ function writeDraft(id: string, v: string) {
 const finePointer = () => typeof window !== "undefined" && window.matchMedia("(pointer: fine)").matches;
 
 /**
- * Sizes the chat to the part of the screen the keyboard leaves visible. iOS Safari doesn't resize
- * the page for the keyboard; it slides the whole page up instead, pushing the header off screen.
+ * Sizes the chat to exactly the part of the screen that is visible. iOS Safari doesn't resize the
+ * page for the keyboard (it slides the whole page up, pushing the header off screen), and it can
+ * keep a widened layout from a previous page, which would push the right edge off screen.
  */
 function useVisualViewport(onResize: () => void) {
   const cb = useRef(onResize);
@@ -61,8 +62,12 @@ function useVisualViewport(onResize: () => void) {
       if (!vv) return;
       root.style.setProperty("--vvh", `${vv.height}px`);
       root.style.setProperty("--vvt", `${vv.offsetTop}px`);
+      root.style.setProperty("--vvw", `${vv.width}px`);
+      root.style.setProperty("--vvl", `${vv.offsetLeft}px`);
       cb.current();
     };
+    // Undo any sideways scroll carried over from the previous page.
+    if (window.scrollX) window.scrollTo(0, window.scrollY);
     update();
     vv?.addEventListener("resize", update);
     vv?.addEventListener("scroll", update);
@@ -72,6 +77,8 @@ function useVisualViewport(onResize: () => void) {
       root.classList.remove("chat-locked");
       root.style.removeProperty("--vvh");
       root.style.removeProperty("--vvt");
+      root.style.removeProperty("--vvw");
+      root.style.removeProperty("--vvl");
     };
   }, []);
 }
@@ -261,7 +268,7 @@ export default function ChatView() {
   const starters = (icp?.research_questions ?? []).slice(0, 4);
 
   return (
-    <div className="fixed inset-x-0 top-0 flex h-[var(--vvh,100dvh)] translate-y-[var(--vvt,0px)] flex-col overscroll-none bg-[var(--background)] print:static print:block print:h-auto print:translate-y-0">
+    <div className="fixed left-0 top-0 flex h-[var(--vvh,100dvh)] w-[var(--vvw,100%)] translate-x-[var(--vvl,0px)] translate-y-[var(--vvt,0px)] flex-col overflow-hidden overscroll-none bg-[var(--background)] print:static print:block print:h-auto print:w-auto print:translate-x-0 print:translate-y-0 print:overflow-visible">
       {/* Top bar */}
       <header className="flex shrink-0 items-center gap-2 border-b border-zinc-200 px-2 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] dark:border-zinc-800 sm:gap-3 sm:px-4 print:hidden">
         <Link
@@ -365,7 +372,7 @@ export default function ChatView() {
           const el = e.currentTarget;
           nearBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
         }}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain print:block print:overflow-visible"
+        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain print:block print:overflow-visible"
       >
         <div className="mx-auto w-full max-w-3xl space-y-6 px-3 py-4 sm:px-4 sm:py-6 print:max-w-none print:px-0 print:py-0">
           {/* Printout heading: who, when, and what this is. */}

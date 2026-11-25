@@ -22,6 +22,14 @@
   }
 }
 
+/* Nothing may make a page wider than the screen: on iPhone that widens the whole layout (and keeps
+   it widened on the next page), pushing headers and buttons off the right edge. "clip", unlike
+   "hidden", doesn't create a scroll container, so sticky elements keep working. */
+html,
+body {
+  overflow-x: clip;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
