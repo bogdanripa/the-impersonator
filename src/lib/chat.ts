@@ -157,7 +157,11 @@ Stories:
 ${stories}`;
 }
 
-export async function personaReply(conversationId: string, userText: string) {
+/**
+ * Writes the persona's reply to the conversation's latest message, which must be the user's
+ * (saved beforehand, so it is never lost if the reply fails or the visitor leaves).
+ */
+export async function personaReply(conversationId: string) {
   const conversation = await db.query.conversations.findFirst({ where: eq(schema.conversations.id, conversationId) });
   if (!conversation) throw new Error("Conversation not found");
   const persona = await db.query.personas.findFirst({ where: eq(schema.personas.id, conversation.personaId) });
@@ -169,6 +173,9 @@ export async function personaReply(conversationId: string, userText: string) {
     .from(schema.messages)
     .where(eq(schema.messages.conversationId, conversationId))
     .orderBy(asc(schema.messages.createdAt));
+  const last = history.at(-1);
+  if (last?.role !== "user") throw new Error("There is no question waiting for a reply");
+  const userText = last.content;
 
   const base = {
     model: MODEL,
@@ -185,7 +192,6 @@ export async function personaReply(conversationId: string, userText: string) {
           ? { role: "user" as const, content: m.content }
           : { role: "assistant" as const, content: m.raw ?? m.content },
       ),
-      { role: "user" as const, content: userText },
     ],
   });
   // Live lookups: run them on our side (fetched + verified), hand back verified quotes as L# codes.
@@ -245,7 +251,6 @@ export async function personaReply(conversationId: string, userText: string) {
   const ungrounded = insightIds.length + storyIds.length + liveIds.length === 0 && !out.evidence_gap;
   const reply = segments.map((x) => x.text).join("\n\n");
 
-  const [userRow] = await db.insert(schema.messages).values({ conversationId, role: "user", content: userText }).returning();
   const [personaRow] = await db
     .insert(schema.messages)
     .values({
@@ -276,5 +281,26 @@ export async function personaReply(conversationId: string, userText: string) {
   if (!conversation.title) {
     await db.update(schema.conversations).set({ title: userText.slice(0, 80) }).where(eq(schema.conversations.id, conversationId));
   }
-  return { user: userRow, persona: personaRow };
+  return { persona: personaRow };
+}
+
+/** A reply still "thinking" after this long was cut off (the route's max duration is 300s). */
+export const REPLY_TIMEOUT_MS = 6 * 60_000;
+
+/** Runs a reply in the background and records how it ended on the conversation. */
+export async function runReply(conversationId: string) {
+  try {
+    await personaReply(conversationId);
+    await db
+      .update(schema.conversations)
+      .set({ replyStatus: null, replyError: null })
+      .where(eq(schema.conversations.id, conversationId));
+  } catch (err) {
+    console.error("Persona reply failed", conversationId, err);
+    await db
+      .update(schema.conversations)
+      .set({ replyStatus: "failed", replyError: (err as Error).message?.slice(0, 500) || "The reply failed." })
+      .where(eq(schema.conversations.id, conversationId))
+      .catch(() => {});
+  }
 }

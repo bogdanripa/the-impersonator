@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api } from "@/lib/api-client";
 import type { PersonaData } from "@/lib/client-types";
@@ -19,7 +19,62 @@ type Message = {
 type Live = { id: string; url: string; title: string | null; quote: string; speaker: string; isAnchor: boolean; retrievedAt: string; query: string };
 type Conversation = {
   id: string; personaId: string; personaVersion: number; title: string | null; createdBy: string | null; createdAt: string;
+  forkedFrom: string | null; forkedFromBy: string | null;
+  /** null (idle) | thinking (reply being written on the server) | failed */
+  replyStatus: string | null; replyError: string | null;
 };
+type ConversationResponse = { conversation: Conversation; messages: Message[]; canWrite: boolean; live: Live[] };
+
+const draftKey = (id: string) => `chat-draft:${id}`;
+function readDraft(id: string) {
+  try {
+    return typeof window === "undefined" ? "" : (localStorage.getItem(draftKey(id)) ?? "");
+  } catch {
+    return "";
+  }
+}
+function writeDraft(id: string, v: string) {
+  try {
+    if (v) localStorage.setItem(draftKey(id), v);
+    else localStorage.removeItem(draftKey(id));
+  } catch {
+    // Private mode or storage blocked: the draft just isn't kept.
+  }
+}
+/** Phones and tablets: no autofocus (it pops the keyboard up over the conversation). */
+const finePointer = () => typeof window !== "undefined" && window.matchMedia("(pointer: fine)").matches;
+
+/**
+ * Sizes the chat to the part of the screen the keyboard leaves visible. iOS Safari doesn't resize
+ * the page for the keyboard; it slides the whole page up instead, pushing the header off screen.
+ */
+function useVisualViewport(onResize: () => void) {
+  const cb = useRef(onResize);
+  useEffect(() => {
+    cb.current = onResize;
+  });
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.add("chat-locked");
+    const vv = window.visualViewport;
+    const update = () => {
+      if (!vv) return;
+      root.style.setProperty("--vvh", `${vv.height}px`);
+      root.style.setProperty("--vvt", `${vv.offsetTop}px`);
+      cb.current();
+    };
+    update();
+    vv?.addEventListener("resize", update);
+    vv?.addEventListener("scroll", update);
+    return () => {
+      vv?.removeEventListener("resize", update);
+      vv?.removeEventListener("scroll", update);
+      root.classList.remove("chat-locked");
+      root.style.removeProperty("--vvh");
+      root.style.removeProperty("--vvt");
+    };
+  }, []);
+}
 
 /** Full-screen, immersive conversation with one persona. */
 export default function ChatView() {
@@ -28,8 +83,10 @@ export default function ChatView() {
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [persona, setPersona] = useState<PersonaData | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [text, setText] = useState("");
-  const [pending, setPending] = useState<string | null>(null);
+  // Unsent text survives app switches, reloads and the tab being discarded.
+  const [text, setText] = useState(() => readDraft(id));
+  /** A question on its way to the server (not yet confirmed saved). */
+  const [sending, setSending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showThoughts, setShowThoughts] = useState(false);
   const [showLegend, setShowLegend] = useState(false);
@@ -37,37 +94,91 @@ export default function ChatView() {
   const [live, setLive] = useState<Map<string, Live>>(new Map());
   const [copied, setCopied] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [busy, setBusy] = useState(false);
   const scroller = useRef<HTMLElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
+  const nearBottom = useRef(true);
+
+  const load = useCallback(async () => {
+    const c = await api<ConversationResponse>(`/api/conversations/${id}`);
+    setConversation(c.conversation);
+    setCanWrite(c.canWrite);
+    setLive(new Map(c.live.map((l) => [l.id, l])));
+    setMessages(c.messages);
+    return c;
+  }, [id]);
 
   useEffect(() => {
     (async () => {
       try {
-        const c = await api<{ conversation: Conversation; messages: Message[]; canWrite: boolean; live: Live[] }>(`/api/conversations/${id}`);
-        setConversation(c.conversation);
-        setCanWrite(c.canWrite);
-        setLive(new Map(c.live.map((l) => [l.id, l])));
-        setMessages(c.messages);
+        const c = await load();
+        // A draft left over from a send that did reach the server isn't a draft any more.
+        const last = c.messages.at(-1);
+        if (last?.role === "user" && last.content === readDraft(id).trim()) {
+          writeDraft(id, "");
+          setText("");
+        }
         setPersona(await api<PersonaData>(`/api/personas/${c.conversation.personaId}`));
+        if (c.canWrite && finePointer()) setTimeout(() => input.current?.focus(), 0);
       } catch (e) {
         setError((e as Error).message);
       }
     })();
-  }, [id]);
+  }, [id, load]);
 
-  // Scroll only the conversation pane (never the window) to the newest message.
+  // Keep the draft while it's being sent; it's only dropped once the server has it.
+  useEffect(() => {
+    if (text || !sending) writeDraft(id, text);
+  }, [id, text, sending]);
+
+  const thinking = conversation?.replyStatus === "thinking";
+
+  // The reply is written on the server: check for it while waiting, and as soon as the page is
+  // visible again after switching apps.
+  useEffect(() => {
+    if (!thinking) return;
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") load().catch(() => {});
+    }, 2500);
+    return () => clearInterval(t);
+  }, [thinking, load]);
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === "visible") load().catch(() => {});
+    };
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("pageshow", refresh);
+    window.addEventListener("online", refresh);
+    return () => {
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("pageshow", refresh);
+      window.removeEventListener("online", refresh);
+    };
+  }, [load]);
+
+  // Scroll only the conversation pane (never the window) to the newest message: instantly when
+  // the conversation opens, smoothly as new messages arrive.
+  const opened = useRef(false);
   useEffect(() => {
     const el = scroller.current;
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  }, [messages, pending]);
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: opened.current ? "smooth" : "instant" });
+    opened.current = true;
+  }, [messages, sending, thinking, persona, conversation?.replyStatus]);
+
+  // When the keyboard opens or closes, keep the latest message in view.
+  useVisualViewport(() => {
+    const el = scroller.current;
+    if (el && nearBottom.current) el.scrollTop = el.scrollHeight;
+  });
 
   // Grow the input with its content, up to a limit.
   useEffect(() => {
     const el = input.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-  }, [text]);
+    el.style.height = `${Math.min(el.scrollHeight, finePointer() ? 200 : 120)}px`;
+  }, [text, persona]);
 
   const idx = useMemo(() => (persona ? buildIndex(persona) : null), [persona]);
   const icp = persona?.persona.icp;
@@ -75,23 +186,40 @@ export default function ChatView() {
 
   async function send(raw: string) {
     const msg = raw.trim();
-    if (!msg || pending) return;
+    if (!msg || sending || thinking) return;
+    setSending(msg);
     setText("");
-    setPending(msg);
     setError(null);
     try {
-      const r = await api<{ user: Message; persona: Message }>(`/api/conversations/${id}/messages`, { body: { text: msg } });
-      if (r.persona.liveIds?.length) {
-        const c = await api<{ live: Live[] }>(`/api/conversations/${id}`);
-        setLive(new Map(c.live.map((l) => [l.id, l])));
+      await api(`/api/conversations/${id}/messages`, { body: { text: msg } });
+      writeDraft(id, "");
+      await load().catch(() => {});
+    } catch (err) {
+      // The question may have reached the server even though the answer to the request didn't.
+      const c = await load().catch(() => null);
+      const last = c?.messages.at(-1);
+      if (last?.role === "user" && last.content === msg) {
+        writeDraft(id, "");
+      } else {
+        setError((err as Error).message);
+        setText(msg);
       }
-      setMessages((m) => [...m, r.user, r.persona]);
+    } finally {
+      setSending(null);
+      if (finePointer()) input.current?.focus();
+    }
+  }
+
+  async function retry() {
+    setError(null);
+    setBusy(true);
+    try {
+      await api(`/api/conversations/${id}/messages`, { body: { retry: true } });
+      await load();
     } catch (err) {
       setError((err as Error).message);
-      setText(msg);
     } finally {
-      setPending(null);
-      input.current?.focus();
+      setBusy(false);
     }
   }
 
@@ -115,6 +243,17 @@ export default function ChatView() {
     }
   }
 
+  async function continueAsCopy() {
+    setBusy(true);
+    try {
+      const { id: cid } = await api<{ id: string }>(`/api/conversations/${id}/fork`, { method: "POST" });
+      router.push(`/chat/${cid}`);
+    } catch (e) {
+      setError((e as Error).message);
+      setBusy(false);
+    }
+  }
+
   if (!persona || !idx) {
     return <div className="flex h-dvh items-center justify-center text-sm text-zinc-500">{error ?? "Loading…"}</div>;
   }
@@ -122,7 +261,7 @@ export default function ChatView() {
   const starters = (icp?.research_questions ?? []).slice(0, 4);
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-[var(--background)] print:static print:block">
+    <div className="fixed inset-x-0 top-0 flex h-[var(--vvh,100dvh)] translate-y-[var(--vvt,0px)] flex-col overscroll-none bg-[var(--background)] print:static print:block print:h-auto print:translate-y-0">
       {/* Top bar */}
       <header className="flex shrink-0 items-center gap-2 border-b border-zinc-200 px-2 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] dark:border-zinc-800 sm:gap-3 sm:px-4 print:hidden">
         <Link
@@ -138,6 +277,14 @@ export default function ChatView() {
           <div className="truncate text-xs text-zinc-500">
             {icp ? `${icp.anchor_role} · ${icp.anchor_company}` : "Simulation from public statements"}
             {conversation && conversation.personaVersion !== persona.persona.version && " · earlier persona version"}
+            {conversation?.forkedFrom && (
+              <>
+                {" · "}
+                <Link href={`/chat/${conversation.forkedFrom}`} className="underline">
+                  continued from {conversation.forkedFromBy ?? "a shared"} conversation
+                </Link>
+              </>
+            )}
           </div>
         </div>
         <div className="relative flex shrink-0 items-center gap-2">
@@ -212,7 +359,14 @@ export default function ChatView() {
       </header>
 
       {/* Conversation */}
-      <main ref={scroller} className="min-h-0 flex-1 overflow-y-auto print:block print:overflow-visible">
+      <main
+        ref={scroller}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          nearBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+        }}
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain print:block print:overflow-visible"
+      >
         <div className="mx-auto w-full max-w-3xl space-y-6 px-3 py-4 sm:px-4 sm:py-6 print:max-w-none print:px-0 print:py-0">
           {/* Printout heading: who, when, and what this is. */}
           <div className="hidden border-b border-zinc-300 pb-3 print:block">
@@ -224,7 +378,7 @@ export default function ChatView() {
               {" · "}A simulation built only from public statements, not the real person.
             </div>
           </div>
-          {messages.length === 0 && !pending && (
+          {messages.length === 0 && !sending && (
             <div className="flex flex-col items-center pt-6 text-center sm:pt-10 print:hidden">
               <Avatar persona={persona.persona} size="lg" />
               <h1 className="mt-3 text-xl font-semibold">{name}</h1>
@@ -261,14 +415,25 @@ export default function ChatView() {
             ),
           )}
 
-          {pending && (
-            <>
-              <UserMessage content={pending} />
-              <div className="flex items-center gap-3 text-sm text-zinc-500 print:hidden">
-                <Avatar persona={persona.persona} size="sm" />
-                <span className="animate-pulse">{name} is thinking… (may look things up online)</span>
-              </div>
-            </>
+          {sending && <UserMessage content={sending} />}
+          {(sending || thinking) && (
+            <div className="flex items-center gap-3 text-sm text-zinc-500 print:hidden">
+              <Avatar persona={persona.persona} size="sm" />
+              <span className="animate-pulse">
+                {name} is thinking… (may look things up online)
+                {thinking && <span className="block text-xs">You can leave this page or switch apps; the reply will be here when you&apos;re back.</span>}
+              </span>
+            </div>
+          )}
+          {conversation?.replyStatus === "failed" && (
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-red-300 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:text-red-300 print:hidden">
+              <span className="min-w-0 flex-1">No reply: {conversation.replyError ?? "something went wrong."}</span>
+              {canWrite && (
+                <button onClick={retry} disabled={busy} className="rounded border border-current px-3 py-1.5 disabled:opacity-50">
+                  Try again
+                </button>
+              )}
+            </div>
           )}
         </div>
       </main>
@@ -279,11 +444,24 @@ export default function ChatView() {
           <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm">
             <span className="text-zinc-500">
               Shared conversation{conversation?.createdBy ? ` started by ${conversation.createdBy}` : ""}
-              {conversation?.createdAt ? ` on ${new Date(conversation.createdAt).toLocaleDateString()}` : ""}. Read-only.
+              {conversation?.createdAt ? ` on ${new Date(conversation.createdAt).toLocaleDateString()}` : ""}. Continue it as your own copy;
+              theirs stays as it is.
             </span>
-            <button onClick={newConversation} className="rounded-lg bg-zinc-900 px-4 py-2 text-white dark:bg-zinc-100 dark:text-zinc-900">
-              Start my own conversation
-            </button>
+            <div className="flex w-full gap-2 sm:w-auto">
+              <button
+                onClick={newConversation}
+                className="flex-1 rounded-lg border border-zinc-300 px-4 py-2 dark:border-zinc-700 sm:flex-none"
+              >
+                Start fresh
+              </button>
+              <button
+                onClick={continueAsCopy}
+                disabled={busy}
+                className="flex-1 rounded-lg bg-zinc-900 px-4 py-2 text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 sm:flex-none"
+              >
+                {busy ? "Copying…" : "Continue it"}
+              </button>
+            </div>
           </div>
         ) : (
         <form
@@ -297,20 +475,19 @@ export default function ChatView() {
             ref={input}
             rows={1}
             value={text}
-            autoFocus
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && finePointer()) {
                 e.preventDefault();
                 send(text);
               }
             }}
             placeholder={`Message ${name}…`}
-            className="max-h-[200px] flex-1 resize-none rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm leading-relaxed dark:border-zinc-700"
+            className="max-h-[200px] min-w-0 flex-1 resize-none rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm leading-relaxed dark:border-zinc-700"
           />
           <button
             type="submit"
-            disabled={!!pending || !text.trim()}
+            disabled={!!sending || thinking || !text.trim()}
             className="rounded-lg bg-zinc-900 px-4 py-2 text-sm text-white disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900"
           >
             Send
@@ -447,7 +624,7 @@ function PersonaMessage({
                     <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
                       <TierBadge tier="live" />
                       <span>{l.speaker}{l.isAnchor ? " (their own words)" : ""}</span>
-                      <a href={l.url} target="_blank" rel="noreferrer noopener" className="underline">
+                      <a href={l.url} target="_blank" rel="noreferrer noopener" className="underline [overflow-wrap:anywhere]">
                         {l.title ?? new URL(l.url).hostname}
                       </a>
                       <span>· retrieved live {new Date(l.retrievedAt).toLocaleString()}, verified against the page</span>

@@ -40,7 +40,7 @@ function Quote({ quote, subjectId, sourceId, idx, heading }: { quote: string; su
           {subject?.organization ? ` (${subject.organization})` : ""}
         </span>
         {source && (
-          <a href={source.url} target="_blank" rel="noreferrer noopener" className="underline">
+          <a href={source.url} target="_blank" rel="noreferrer noopener" className="underline [overflow-wrap:anywhere]">
             {source.title ?? new URL(source.url).hostname}
           </a>
         )}
@@ -70,7 +70,7 @@ export function EvidenceToggle({ insightIds, storyIds, idx, label }: { insightId
   if (!n) return null;
   return (
     <div>
-      <button onClick={() => setOpen(!open)} className="text-xs text-zinc-500 underline">
+      <button onClick={() => setOpen(!open)} className="py-1 text-xs text-zinc-500 underline">
         {open ? "Hide" : label ?? "Show"} evidence ({n})
       </button>
       {open && <EvidenceList insightIds={insightIds} storyIds={storyIds} idx={idx} />}

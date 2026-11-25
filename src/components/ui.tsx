@@ -33,7 +33,7 @@ export function TierBadge({ tier }: { tier: string }) {
       {parts.map((p) => {
         const t = TIER[p] ?? { label: p, cls: "border border-zinc-400" };
         return (
-          <span key={p} className={`rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${t.cls}`}>
+          <span key={p} className={`whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${t.cls}`}>
             {t.label}
           </span>
         );
@@ -62,7 +62,7 @@ export function Button({
         ? "border border-red-300 text-red-700 dark:border-red-900 dark:text-red-400"
         : "border border-zinc-300 dark:border-zinc-700";
   return (
-    <button type={type} onClick={onClick} disabled={disabled} className={`rounded px-3 py-1.5 text-sm disabled:opacity-50 ${cls}`}>
+    <button type={type} onClick={onClick} disabled={disabled} className={`min-h-10 rounded px-3 py-1.5 text-sm disabled:opacity-50 sm:min-h-0 ${cls}`}>
       {children}
     </button>
   );

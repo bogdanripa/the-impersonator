@@ -1,4 +1,5 @@
 import {
+  type AnyPgColumn,
   boolean,
   index,
   integer,
@@ -256,6 +257,12 @@ export const conversations = pgTable("conversations", {
   title: text("title"),
   createdBy: text("created_by"),
   createdAt: createdAt(),
+  /** The conversation this one was copied from, when a teammate continued a shared conversation. */
+  forkedFrom: uuid("forked_from").references((): AnyPgColumn => conversations.id, { onDelete: "set null" }),
+  /** The reply runs on the server after the request returns: null (idle) | thinking | failed. */
+  replyStatus: text("reply_status"),
+  replyError: text("reply_error"),
+  replyStartedAt: timestamp("reply_started_at", { withTimezone: true }),
 });
 
 export const messages = pgTable(

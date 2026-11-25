@@ -28,6 +28,13 @@ body {
   font-family: var(--font-sans), system-ui, sans-serif;
 }
 
+/* The chat fills the visible screen itself; the page behind it must not scroll or bounce. */
+html.chat-locked,
+html.chat-locked body {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 /* iOS zooms into any field under 16px when it is focused; keep phone inputs at 16px. */
 @media (max-width: 639px) {
   input:not([type="checkbox"]):not([type="radio"]),

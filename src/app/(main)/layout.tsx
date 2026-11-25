@@ -12,7 +12,7 @@ export default function MainLayout({ children }: { children: ReactNode }) {
           <NewPersonaButton />
         </div>
       </header>
-      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6">{children}</main>
+      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]">{children}</main>
     </>
   );
 }

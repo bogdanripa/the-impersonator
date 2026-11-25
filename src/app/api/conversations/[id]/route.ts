@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { asc, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { handleError, jsonError } from "@/lib/http";
+import { REPLY_TIMEOUT_MS } from "@/lib/chat";
 
 /** Any signed-in teammate can read a conversation; only the person who started it can continue it. */
 export async function GET(request: Request, ctx: RouteContext<"/api/conversations/[id]">) {
@@ -26,7 +27,24 @@ export async function GET(request: Request, ctx: RouteContext<"/api/conversation
       .orderBy(asc(schema.liveEvidence.retrievedAt));
     const viewer = request.headers.get("x-user-email");
     const canWrite = !conversation.createdBy || conversation.createdBy === viewer;
-    return NextResponse.json({ conversation, messages, canWrite, live });
+    // A reply that has been "thinking" past the route's time limit was cut off: offer a retry.
+    const stale =
+      conversation.replyStatus === "thinking" &&
+      (!conversation.replyStartedAt || Date.now() - conversation.replyStartedAt.getTime() > REPLY_TIMEOUT_MS);
+    const forkedFromBy = conversation.forkedFrom
+      ? (await db.query.conversations.findFirst({ where: eq(schema.conversations.id, conversation.forkedFrom) }))?.createdBy ?? null
+      : null;
+    return NextResponse.json({
+      conversation: {
+        ...conversation,
+        replyStatus: stale ? "failed" : conversation.replyStatus,
+        replyError: stale ? "The reply took too long and was stopped." : conversation.replyError,
+        forkedFromBy,
+      },
+      messages,
+      canWrite,
+      live,
+    });
   } catch (err) {
     return handleError(err);
   }

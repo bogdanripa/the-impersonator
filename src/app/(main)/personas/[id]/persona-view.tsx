@@ -94,10 +94,10 @@ export default function PersonaView() {
       <Link href="/" className="text-xs text-zinc-500 hover:underline">← All personas</Link>
 
       {/* Header: who, and the main action */}
-      <div className="flex flex-wrap items-center gap-4">
+      <div className="flex flex-wrap items-start gap-4 sm:items-center">
         <PersonaPhoto persona={persona} size="lg" />
         <div className="min-w-0 flex-1">
-          <h1 className="text-2xl font-semibold leading-tight">{persona.icp?.anchor_name ?? persona.name}</h1>
+          <h1 className="text-xl font-semibold leading-tight sm:text-2xl">{persona.icp?.anchor_name ?? persona.name}</h1>
           {persona.icp && (
             <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-sm text-zinc-500">
               {persona.icp.anchor_role} · <CompanyLogo persona={persona} />
@@ -106,11 +106,11 @@ export default function PersonaView() {
           )}
           {persona.tagline && <p className="mt-1 text-sm text-zinc-700 dark:text-zinc-300">{persona.tagline}</p>}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex w-full items-center gap-2 sm:w-auto">
           {ready && (
             <button
               onClick={newConversation}
-              className="rounded-full bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white transition hover:scale-[1.02] dark:bg-zinc-100 dark:text-zinc-900"
+              className="flex-1 rounded-full bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white transition sm:flex-none hover:scale-[1.02] dark:bg-zinc-100 dark:text-zinc-900"
             >
               New conversation
             </button>
@@ -197,7 +197,7 @@ function Menu({ items }: { items: MenuItem[] }) {
                   setOpen(false);
                   it.onClick();
                 }}
-                className={`block w-full px-3 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-900 ${it.danger ? "text-red-600" : ""}`}
+                className={`block w-full px-3 py-2.5 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-900 ${it.danger ? "text-red-600" : ""}`}
               >
                 {it.label}
               </button>
@@ -321,7 +321,7 @@ function Conversations({ personaId, onNew }: { personaId: string; onNew: () => v
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search conversations…"
-          className="w-full max-w-xs rounded-full border border-zinc-300 bg-transparent px-4 py-1.5 text-sm dark:border-zinc-700"
+          className="w-full rounded-full border sm:max-w-xs border-zinc-300 bg-transparent px-4 py-1.5 text-sm dark:border-zinc-700"
         />
       </div>
       {rows === null ? (
@@ -460,15 +460,16 @@ function Builder({
       {error && <p className="text-sm text-red-600">{error}</p>}
       <form onSubmit={send} className="flex gap-2">
         <input
+          enterKeyHint="send"
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="Type your answer…"
-          className="flex-1 rounded border border-zinc-300 bg-transparent px-3 py-2 text-sm dark:border-zinc-700"
+          className="min-w-0 flex-1 rounded border border-zinc-300 bg-transparent px-3 py-2 text-sm dark:border-zinc-700"
         />
         <Button type="submit" disabled={!!pending}>Send</Button>
       </form>
       {icp && (
-        <div className="flex items-center gap-3 rounded border border-emerald-300 p-3 dark:border-emerald-900">
+        <div className="flex flex-col gap-3 rounded border border-emerald-300 p-3 dark:border-emerald-900 sm:flex-row sm:items-center">
           <p className="flex-1 text-sm">
             Happy with the setup above?{" "}
             {isUpdate
@@ -651,7 +652,7 @@ function Sources({ data, act, personaId }: { data: PersonaData; act: (fn: () => 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-lg font-semibold">Sources</h2>
         {editable && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button variant="secondary" onClick={() => act(() => api(`/api/personas/${personaId}/research`, { method: "POST" }))}>
               Search again
             </Button>
@@ -675,15 +676,15 @@ function Sources({ data, act, personaId }: { data: PersonaData; act: (fn: () => 
               setUrl("");
             });
           }}
-          className="flex flex-wrap gap-2"
+          className="flex flex-wrap gap-2 sm:flex-nowrap"
         >
           <input
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             placeholder="Add a URL (podcast transcript, interview, article, filing…)"
-            className="min-w-64 flex-1 rounded border border-zinc-300 bg-transparent px-3 py-1.5 text-sm dark:border-zinc-700"
+            className="min-w-0 flex-1 basis-full rounded border border-zinc-300 bg-transparent px-3 py-1.5 text-sm dark:border-zinc-700"
           />
-          <select value={tier} onChange={(e) => setTier(e.target.value)} className="rounded border border-zinc-300 bg-transparent px-2 text-sm dark:border-zinc-700">
+          <select value={tier} onChange={(e) => setTier(e.target.value)} className="min-w-0 flex-1 rounded border py-1.5 sm:flex-none border-zinc-300 bg-transparent px-2 text-sm dark:border-zinc-700">
             {tiers.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
           <Button type="submit" variant="secondary" disabled={!url}>Add</Button>
@@ -714,7 +715,7 @@ function SourceRow({ s, act, editable }: { s: Source; act: (fn: () => Promise<un
     <li className={`rounded border p-3 text-sm dark:border-zinc-800 ${s.status === "rejected" ? "opacity-50" : "border-zinc-200"}`}>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <a href={s.url} target="_blank" rel="noreferrer noopener" className="font-medium underline break-words">
+          <a href={s.url} target="_blank" rel="noreferrer noopener" className="font-medium underline [overflow-wrap:anywhere]">
             {s.title ?? s.url}
           </a>
           <div className="text-xs text-zinc-500">
@@ -729,8 +730,8 @@ function SourceRow({ s, act, editable }: { s: Source; act: (fn: () => Promise<un
             </div>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-zinc-500">{SOURCE_STATUS[s.status] ?? s.status}</span>
+        <div className="flex items-center gap-2 max-sm:w-full max-sm:justify-end">
+          <span className="text-xs text-zinc-500 max-sm:mr-auto">{SOURCE_STATUS[s.status] ?? s.status}</span>
           {reviewable && (
             <>
               <Button variant={s.status === "approved" ? "primary" : "secondary"} onClick={() => set("approved")}>✓</Button>
@@ -891,7 +892,7 @@ function GapsView({ data, act, personaId }: { data: PersonaData; act: (fn: () =>
   const busy = RUNNING.includes(data.persona.status);
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-zinc-200 p-3 text-sm dark:border-zinc-800">
+      <div className="flex flex-col gap-3 rounded-lg border border-zinc-200 p-3 text-sm dark:border-zinc-800 sm:flex-row sm:items-center">
         <p className="min-w-0 flex-1 text-zinc-600 dark:text-zinc-400">
           Questions from your team&apos;s conversations that the evidence didn&apos;t cover. Send them to Claude to look for public material;
           anything found is verified and becomes a new version of the persona.
@@ -917,7 +918,7 @@ function GapsView({ data, act, personaId }: { data: PersonaData; act: (fn: () =>
           {gaps.map((g) => (
             <li key={g.id} className="px-4 py-3 text-sm">
               <div className="flex items-start justify-between gap-3">
-                <span className="font-medium">{g.question}</span>
+                <span className="min-w-0 font-medium [overflow-wrap:anywhere]">{g.question}</span>
                 <span
                   className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${
                     g.status === "open"
