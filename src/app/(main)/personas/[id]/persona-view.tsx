@@ -94,8 +94,9 @@ export default function PersonaView() {
       <Link href="/" className="text-xs text-zinc-500 hover:underline">← All personas</Link>
 
       {/* Header: who, and the main action */}
-      <div className="flex flex-wrap items-start gap-4 sm:items-center">
-        <PersonaPhoto persona={persona} size="lg" />
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+        <div className="flex min-w-0 flex-1 items-start gap-4 sm:items-center">
+        <PersonaPhoto persona={persona} size="lg" className="max-sm:h-14 max-sm:w-14" />
         <div className="min-w-0 flex-1">
           <h1 className="text-xl font-semibold leading-tight sm:text-2xl">{persona.icp?.anchor_name ?? persona.name}</h1>
           {persona.icp && (
@@ -106,7 +107,8 @@ export default function PersonaView() {
           )}
           {persona.tagline && <p className="mt-1 text-sm text-zinc-700 dark:text-zinc-300">{persona.tagline}</p>}
         </div>
-        <div className="flex w-full items-center gap-2 sm:w-auto">
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
           {ready && (
             <button
               onClick={newConversation}
