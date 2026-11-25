@@ -278,7 +278,7 @@ export const messages = pgTable(
     insightIds: jsonb("insight_ids").$type<string[]>().notNull().default([]),
     storyIds: jsonb("story_ids").$type<string[]>().notNull().default([]),
     /** The reply split into blocks, each with its own evidence (for per-paragraph highlighting). */
-    segments: jsonb("segments").$type<{ text: string; insightIds: string[]; storyIds: string[]; liveIds?: string[]; noEvidence: boolean }[]>(),
+    segments: jsonb("segments").$type<{ text: string; insightIds: string[]; storyIds: string[]; liveIds?: string[]; noEvidence: boolean; guess?: boolean }[]>(),
     /** Live-retrieved evidence this reply cites (see live_evidence). */
     liveIds: jsonb("live_ids").$type<string[]>().notNull().default([]),
     /** True when the reply cited no valid evidence. Shown as a warning, never as fact. */
