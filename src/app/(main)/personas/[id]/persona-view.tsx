@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api } from "@/lib/api-client";
 import type { Icp } from "@/lib/types";
@@ -11,6 +11,7 @@ import { buildIndex, EvidenceToggle } from "@/components/evidence";
 import { CompanyLogo, PersonaPhoto } from "@/components/persona-card";
 import { Markdown } from "@/components/markdown";
 import { soulMarkdown } from "@/lib/soul-format";
+import { attachmentHref } from "@/lib/attachment-url";
 
 const RUNNING = ["discovering", "extracting", "synthesizing"];
 
@@ -419,6 +420,42 @@ function Builder({
   const [error, setError] = useState<string | null>(null);
   const isUpdate = mode === "update";
   const icp = isUpdate ? data.persona.pendingIcp : data.persona.icp;
+  const [files, setFiles] = useState<{ id: string; filename: string; url: string }[]>([]);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const personaId = data.persona.id;
+
+  useEffect(() => {
+    let cancelled = false;
+    api<{ files: { id: string; filename: string; url: string }[] }>(`/api/personas/${personaId}/attachments`).then(
+      (d) => !cancelled && setFiles(d.files),
+      () => {},
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [personaId]);
+
+  async function upload(file: File) {
+    if (pending) return;
+    setError(null);
+    setPending(`📎 ${file.name}`);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(`/api/personas/${personaId}/attachments`, { method: "POST", body: form });
+      const body = (await res.json().catch(() => ({}))) as { error?: string; file?: { id: string; filename: string; url: string } };
+      if (!res.ok || !body.file) throw new Error(body.error ?? `Upload failed (${res.status})`);
+      setFiles((f) => [...f, body.file!]);
+      // Tell the builder, so it reads the file and continues from it.
+      await api(`/api/personas/${personaId}/builder`, { body: { text: `I uploaded "${body.file.filename}".` } });
+      await onChange();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setPending(null);
+      if (fileInput.current) fileInput.current.value = "";
+    }
+  }
 
   async function send(e: React.FormEvent) {
     e.preventDefault();
@@ -457,10 +494,45 @@ function Builder({
           </div>
         ))}
         {pending && <Bubble role="user">{pending}</Bubble>}
-        {pending && <p className="animate-pulse text-sm text-zinc-500">Thinking (may search the web)…</p>}
+        {pending && <p className="animate-pulse text-sm text-zinc-500">Thinking (may search the web or read pages)…</p>}
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
+      {files.length > 0 && (
+        <div className="flex flex-wrap gap-2 text-xs">
+          {files.map((f) => (
+            <a
+              key={f.id}
+              href={attachmentHref(f.url)}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="rounded-full border border-zinc-300 px-2 py-1 text-zinc-600 hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-100"
+            >
+              📎 {f.filename}
+            </a>
+          ))}
+        </div>
+      )}
       <form onSubmit={send} className="flex gap-2">
+        <input
+          ref={fileInput}
+          type="file"
+          accept="application/pdf,.pdf,text/plain,.txt,.md"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) upload(f);
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => fileInput.current?.click()}
+          disabled={!!pending}
+          title="Upload a PDF, e.g. their LinkedIn profile (More → Save to PDF)"
+          aria-label="Upload a file"
+          className="shrink-0 rounded border border-zinc-300 px-3 text-base disabled:opacity-50 dark:border-zinc-700"
+        >
+          📎
+        </button>
         <input
           enterKeyHint="send"
           value={text}
@@ -717,7 +789,7 @@ function SourceRow({ s, act, editable }: { s: Source; act: (fn: () => Promise<un
     <li className={`rounded border p-3 text-sm dark:border-zinc-800 ${s.status === "rejected" ? "opacity-50" : "border-zinc-200"}`}>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <a href={s.url} target="_blank" rel="noreferrer noopener" className="font-medium underline [overflow-wrap:anywhere]">
+          <a href={attachmentHref(s.url)} target="_blank" rel="noreferrer noopener" className="font-medium underline [overflow-wrap:anywhere]">
             {s.title ?? s.url}
           </a>
           <div className="text-xs text-zinc-500">

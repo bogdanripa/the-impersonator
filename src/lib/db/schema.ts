@@ -391,3 +391,19 @@ export const personaGaps = pgTable(
   },
   (t) => [index("persona_gaps_persona").on(t.personaId)],
 );
+
+/**
+ * Files the team uploaded for a persona (e.g. LinkedIn's "Save to PDF" export of the anchor's
+ * profile). Only the extracted text is kept. Research reads it as source `attachment:<id>`.
+ */
+export const attachments = pgTable("attachments", {
+  id: id(),
+  personaId: uuid("persona_id").notNull().references(() => personas.id, { onDelete: "cascade" }),
+  filename: text("filename").notNull(),
+  contentType: text("content_type").notNull(),
+  sizeBytes: integer("size_bytes").notNull(),
+  title: text("title"),
+  text: text("text").notNull(),
+  uploadedBy: text("uploaded_by"),
+  createdAt: createdAt(),
+});

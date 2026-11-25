@@ -92,6 +92,13 @@
       "when": 1795596309996,
       "tag": "0012_conversation_titles",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1795607061294,
+      "tag": "0013_attachments",
+      "breakpoints": true
     }
   ]
 }
