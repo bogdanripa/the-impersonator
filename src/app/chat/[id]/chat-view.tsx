@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api } from "@/lib/api-client";
 import type { PersonaData } from "@/lib/client-types";
@@ -36,6 +36,7 @@ export default function ChatView() {
   const [canWrite, setCanWrite] = useState(true);
   const [live, setLive] = useState<Map<string, Live>>(new Map());
   const [copied, setCopied] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
   const scroller = useRef<HTMLElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
 
@@ -94,6 +95,16 @@ export default function ChatView() {
     }
   }
 
+  async function share() {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      prompt("Copy this link to share the conversation with your team:", window.location.href);
+    }
+  }
+
   async function newConversation() {
     if (!persona) return;
     try {
@@ -111,12 +122,12 @@ export default function ChatView() {
   const starters = (icp?.research_questions ?? []).slice(0, 4);
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-[var(--background)]">
+    <div className="fixed inset-0 flex flex-col bg-[var(--background)] print:static print:block">
       {/* Top bar */}
-      <header className="flex shrink-0 items-center gap-3 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800 sm:px-4">
+      <header className="flex shrink-0 items-center gap-2 border-b border-zinc-200 px-2 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] dark:border-zinc-800 sm:gap-3 sm:px-4 print:hidden">
         <Link
           href={`/personas/${persona.persona.id}`}
-          className="rounded p-1 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
           aria-label="Back to profile"
         >
           ←
@@ -129,57 +140,92 @@ export default function ChatView() {
             {conversation && conversation.personaVersion !== persona.persona.version && " · earlier persona version"}
           </div>
         </div>
-        <div className="relative flex items-center gap-2">
-          <label className="hidden cursor-pointer items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400 sm:flex">
+        <div className="relative flex shrink-0 items-center gap-2">
+          {/* Wide screens: every control inline. */}
+          <label className="hidden cursor-pointer items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400 md:flex">
             <input type="checkbox" checked={showThoughts} onChange={(e) => setShowThoughts(e.target.checked)} />
             Inner thoughts
           </label>
           <button
             onClick={() => setShowLegend((v) => !v)}
-            className="rounded border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-700"
+            className="hidden rounded border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-700 md:block"
             aria-expanded={showLegend}
           >
             Badges
           </button>
           <button
-            onClick={async () => {
-              try {
-                await navigator.clipboard.writeText(window.location.href);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 2000);
-              } catch {
-                prompt("Copy this link to share the conversation with your team:", window.location.href);
-              }
-            }}
+            onClick={share}
             title="Copy a link teammates can open (read-only)"
-            className="rounded border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-700"
+            className="hidden rounded border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-700 md:block"
           >
             {copied ? "Link copied" : "Share"}
           </button>
-          <button onClick={newConversation} className="rounded border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-700">
+          <button
+            onClick={() => window.print()}
+            title="Print the whole conversation, or save it as a PDF"
+            className="hidden rounded border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-700 md:block"
+          >
+            Print
+          </button>
+          <button onClick={newConversation} className="hidden rounded border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-700 md:block">
             New chat
           </button>
+
+          {/* Phones and narrow windows: the same controls behind one menu. */}
+          <button
+            onClick={() => setShowMenu((v) => !v)}
+            aria-label="Conversation actions"
+            aria-expanded={showMenu}
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-300 text-lg leading-none dark:border-zinc-700 md:hidden"
+          >
+            ⋯
+          </button>
+          {showMenu && (
+            <>
+              <div className="fixed inset-0 z-10 md:hidden" onClick={() => setShowMenu(false)} aria-hidden />
+              <div className="absolute right-0 top-11 z-20 w-56 overflow-hidden rounded-lg border border-zinc-200 bg-[var(--background)] py-1 text-sm shadow-lg dark:border-zinc-800 md:hidden">
+                <label className="flex cursor-pointer items-center gap-2 px-3 py-2.5 hover:bg-zinc-100 dark:hover:bg-zinc-900">
+                  <input type="checkbox" checked={showThoughts} onChange={(e) => setShowThoughts(e.target.checked)} />
+                  Show inner thoughts
+                </label>
+                <MenuButton onClick={() => { setShowMenu(false); setShowLegend(true); }}>What the badges mean</MenuButton>
+                <MenuButton onClick={() => { share(); setShowMenu(false); }}>{copied ? "Link copied" : "Copy share link"}</MenuButton>
+                <MenuButton onClick={() => { setShowMenu(false); setTimeout(() => window.print(), 50); }}>Print / save as PDF</MenuButton>
+                <MenuButton onClick={() => { setShowMenu(false); newConversation(); }}>New chat</MenuButton>
+              </div>
+            </>
+          )}
+
           {showLegend && (
-            <div className="absolute right-0 top-9 z-10 w-72 space-y-2 rounded-lg border border-zinc-200 bg-[var(--background)] p-3 text-xs shadow-lg dark:border-zinc-800">
-              <div className="flex items-center gap-2"><TierBadge tier="anchor" /> what {name} actually said</div>
-              <div className="flex items-center gap-2"><TierBadge tier="company" /> official company material</div>
-              <div className="flex items-center gap-2"><TierBadge tier="peer" /> similar people, never their own experience</div>
-              <div className="flex items-center gap-2"><TierBadge tier="live" /> looked up online during this chat, verified against the page</div>
-              <p className="text-zinc-500">Replies that cite no evidence are flagged as ungrounded. Each conversation starts fresh.</p>
-              <label className="flex items-center gap-2 sm:hidden">
-                <input type="checkbox" checked={showThoughts} onChange={(e) => setShowThoughts(e.target.checked)} />
-                Show inner thoughts
-              </label>
-            </div>
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setShowLegend(false)} aria-hidden />
+              <div className="absolute right-0 top-11 z-20 w-[min(18rem,calc(100vw-1rem))] space-y-2 rounded-lg border border-zinc-200 bg-[var(--background)] p-3 text-xs shadow-lg dark:border-zinc-800 md:top-9">
+                <div className="flex items-center gap-2"><TierBadge tier="anchor" /> what {name} actually said</div>
+                <div className="flex items-center gap-2"><TierBadge tier="company" /> official company material</div>
+                <div className="flex items-center gap-2"><TierBadge tier="peer" /> similar people, never their own experience</div>
+                <div className="flex items-center gap-2"><TierBadge tier="live" /> looked up online during this chat, verified against the page</div>
+                <p className="text-zinc-500">Replies that cite no evidence are flagged as ungrounded. Each conversation starts fresh.</p>
+              </div>
+            </>
           )}
         </div>
       </header>
 
       {/* Conversation */}
-      <main ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6">
+      <main ref={scroller} className="min-h-0 flex-1 overflow-y-auto print:block print:overflow-visible">
+        <div className="mx-auto w-full max-w-3xl space-y-6 px-3 py-4 sm:px-4 sm:py-6 print:max-w-none print:px-0 print:py-0">
+          {/* Printout heading: who, when, and what this is. */}
+          <div className="hidden border-b border-zinc-300 pb-3 print:block">
+            <div className="text-lg font-semibold">Conversation with {name}</div>
+            {icp && <div className="text-sm text-zinc-600">{icp.anchor_role} · {icp.anchor_company}</div>}
+            <div className="mt-1 text-xs text-zinc-500">
+              {conversation?.createdAt ? `Started ${new Date(conversation.createdAt).toLocaleString()}` : ""}
+              {conversation?.createdBy ? ` by ${conversation.createdBy}` : ""}
+              {" · "}A simulation built only from public statements, not the real person.
+            </div>
+          </div>
           {messages.length === 0 && !pending && (
-            <div className="flex flex-col items-center pt-10 text-center">
+            <div className="flex flex-col items-center pt-6 text-center sm:pt-10 print:hidden">
               <Avatar persona={persona.persona} size="lg" />
               <h1 className="mt-3 text-xl font-semibold">{name}</h1>
               {icp && (
@@ -218,7 +264,7 @@ export default function ChatView() {
           {pending && (
             <>
               <UserMessage content={pending} />
-              <div className="flex items-center gap-3 text-sm text-zinc-500">
+              <div className="flex items-center gap-3 text-sm text-zinc-500 print:hidden">
                 <Avatar persona={persona.persona} size="sm" />
                 <span className="animate-pulse">{name} is thinking… (may look things up online)</span>
               </div>
@@ -228,7 +274,7 @@ export default function ChatView() {
       </main>
 
       {/* Composer */}
-      <footer className="shrink-0 border-t border-zinc-200 dark:border-zinc-800">
+      <footer className="shrink-0 border-t border-zinc-200 pb-[env(safe-area-inset-bottom)] dark:border-zinc-800 print:hidden">
         {!canWrite ? (
           <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm">
             <span className="text-zinc-500">
@@ -245,7 +291,7 @@ export default function ChatView() {
             e.preventDefault();
             send(text);
           }}
-          className="mx-auto flex w-full max-w-3xl items-end gap-2 px-4 py-3"
+          className="mx-auto flex w-full max-w-3xl items-end gap-2 px-3 py-2 sm:px-4 sm:py-3"
         >
           <textarea
             ref={input}
@@ -281,10 +327,18 @@ function Avatar({ persona, size }: { persona: CardPersona; size: "sm" | "md" | "
   return <PersonaPhoto persona={persona} size={size === "lg" ? "xl" : size} />;
 }
 
+function MenuButton({ onClick, children }: { onClick: () => void; children: ReactNode }) {
+  return (
+    <button onClick={onClick} className="block w-full px-3 py-2.5 text-left hover:bg-zinc-100 dark:hover:bg-zinc-900">
+      {children}
+    </button>
+  );
+}
+
 function UserMessage({ content }: { content: string }) {
   return (
-    <div className="flex justify-end">
-      <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl bg-zinc-900 px-4 py-2 text-sm text-white dark:bg-zinc-100 dark:text-zinc-900">
+    <div className="flex justify-end break-inside-avoid">
+      <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl bg-zinc-900 px-4 py-2 text-sm text-white dark:bg-zinc-100 dark:text-zinc-900 print:border print:border-zinc-300 print:bg-zinc-100 print:text-zinc-900">
         {content}
       </div>
     </div>
@@ -318,11 +372,12 @@ function PersonaMessage({
   const segments = m.segments?.length ? m.segments : null;
 
   return (
-    <div className="flex gap-3">
-      <div className="mt-0.5">
+    <div className="flex gap-2 sm:gap-3">
+      <div className="mt-0.5 print:hidden">
         <Avatar persona={card} size="sm" />
       </div>
       <div className="min-w-0 flex-1 space-y-2">
+        <div className="hidden break-after-avoid text-xs font-semibold text-zinc-600 print:block">{card.icp?.anchor_name || card.name}</div>
         {showThoughts && m.innerThought && (
           <div className="rounded-lg border border-dashed border-zinc-300 px-3 py-2 text-sm italic text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
             <span className="font-medium not-italic">Thinking: </span>
@@ -340,7 +395,7 @@ function PersonaMessage({
                   <div
                     key={i}
                     title={!cited && !seg.noEvidence ? "No evidence cited for this paragraph" : undefined}
-                    className={`-mx-2 rounded-md px-2 py-0.5 transition ${
+                    className={`-mx-2 break-inside-avoid rounded-md px-2 py-0.5 transition ${
                       hoverTier ? (lit ? TIER_HIGHLIGHT[hoverTier] : "opacity-35") : ""
                     } ${!cited && !seg.noEvidence ? "border-l-2 border-dashed border-red-400/70" : ""}`}
                   >
@@ -362,7 +417,7 @@ function PersonaMessage({
             <span>No public evidence on this; they said so.</span>
           ) : (
             <>
-              <button onClick={() => setOpen((v) => !v)} className="underline underline-offset-2 hover:text-zinc-900 dark:hover:text-zinc-100">
+              <button onClick={() => setOpen((v) => !v)} className="py-1 underline underline-offset-2 hover:text-zinc-900 dark:hover:text-zinc-100 print:no-underline">
                 {open ? "Hide" : "Grounded in"} {n} {n === 1 ? "quote" : "quotes"}
               </button>
               {[...tiers].map((t) => (
