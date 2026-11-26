@@ -516,6 +516,7 @@ export default function ChatView() {
               }
             }}
             placeholder={`Message ${name}…`}
+            title="Enter to send, Shift+Enter for a new line"
             className="max-h-[200px] min-w-0 flex-1 resize-none rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm leading-relaxed dark:border-zinc-700"
           />
           <button

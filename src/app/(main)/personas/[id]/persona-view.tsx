@@ -422,6 +422,14 @@ function Builder({
   const icp = isUpdate ? data.persona.pendingIcp : data.persona.icp;
   const [files, setFiles] = useState<{ id: string; filename: string; url: string }[]>([]);
   const fileInput = useRef<HTMLInputElement>(null);
+  const textBox = useRef<HTMLTextAreaElement>(null);
+  // Grow the box with its content, up to a limit.
+  useEffect(() => {
+    const el = textBox.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, [text]);
   const personaId = data.persona.id;
 
   useEffect(() => {
@@ -512,7 +520,7 @@ function Builder({
           ))}
         </div>
       )}
-      <form onSubmit={send} className="flex gap-2">
+      <form onSubmit={send} className="flex items-end gap-2">
         <input
           ref={fileInput}
           type="file"
@@ -529,16 +537,25 @@ function Builder({
           disabled={!!pending}
           title="Upload a PDF, e.g. their LinkedIn profile (More → Save to PDF)"
           aria-label="Upload a file"
-          className="shrink-0 rounded border border-zinc-300 px-3 text-base disabled:opacity-50 dark:border-zinc-700"
+          className="h-10 shrink-0 rounded border border-zinc-300 px-3 text-base disabled:opacity-50 dark:border-zinc-700"
         >
           📎
         </button>
-        <input
-          enterKeyHint="send"
+        <textarea
+          ref={textBox}
+          rows={1}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Type your answer…"
-          className="min-w-0 flex-1 rounded border border-zinc-300 bg-transparent px-3 py-2 text-sm dark:border-zinc-700"
+          onKeyDown={(e) => {
+            // Enter sends; Shift+Enter starts a new line. On phones (no Shift key) Enter adds a line
+            // and the Send button sends.
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && window.matchMedia("(pointer: fine)").matches) {
+              e.preventDefault();
+              e.currentTarget.form?.requestSubmit();
+            }
+          }}
+          placeholder="Type your answer… (Shift+Enter for a new line)"
+          className="max-h-[200px] min-w-0 flex-1 resize-none rounded border border-zinc-300 bg-transparent px-3 py-2 text-sm leading-relaxed dark:border-zinc-700"
         />
         <Button type="submit" disabled={!!pending}>Send</Button>
       </form>
