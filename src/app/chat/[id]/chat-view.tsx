@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api-client";
 import type { PersonaData } from "@/lib/client-types";
 import { buildIndex, EvidenceList, subjectTier, type EvidenceIndex } from "@/components/evidence";
@@ -88,6 +88,9 @@ function useVisualViewport(onResize: () => void) {
 export default function ChatView() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const search = useSearchParams();
+  // A question asked from the persona page (?q=…) is sent as soon as the conversation opens.
+  const autoAsk = useRef<string | null>(search.get("q"));
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [persona, setPersona] = useState<PersonaData | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -128,6 +131,7 @@ export default function ChatView() {
           writeDraft(id, "");
           setText("");
         }
+        if (!c.canWrite || c.messages.length) autoAsk.current = null;
         setPersona(await api<PersonaData>(`/api/personas/${c.conversation.personaId}`));
         if (c.canWrite && finePointer()) setTimeout(() => input.current?.focus(), 0);
       } catch (e) {
@@ -231,6 +235,16 @@ export default function ChatView() {
       if (finePointer()) input.current?.focus();
     }
   }
+
+  useEffect(() => {
+    const q = autoAsk.current?.trim();
+    if (!persona || !q) return;
+    autoAsk.current = null;
+    router.replace(`/chat/${id}`);
+    void send(q);
+    // send() is recreated each render; this runs once, when the persona has loaded.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [persona]);
 
   async function retry() {
     setError(null);

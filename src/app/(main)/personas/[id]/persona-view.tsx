@@ -12,6 +12,8 @@ import { CompanyLogo, PersonaPhoto } from "@/components/persona-card";
 import { Markdown } from "@/components/markdown";
 import { soulMarkdown } from "@/lib/soul-format";
 import { attachmentHref } from "@/lib/attachment-url";
+import { PeopleTab } from "./people-tab";
+import { TalkBar, TalkIntro, TalkPrompt } from "./talk-prompt";
 
 const RUNNING = ["discovering", "extracting", "synthesizing"];
 
@@ -59,10 +61,10 @@ export default function PersonaView() {
     }
   }
 
-  async function newConversation() {
+  async function newConversation(question?: string) {
     try {
       const { id: cid } = await api<{ id: string }>(`/api/personas/${id}/conversations`, { method: "POST" });
-      router.push(`/chat/${cid}`);
+      router.push(question ? `/chat/${cid}?q=${encodeURIComponent(question)}` : `/chat/${cid}`);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -113,7 +115,7 @@ export default function PersonaView() {
         <div className="flex shrink-0 items-center gap-2">
           {ready && (
             <button
-              onClick={newConversation}
+              onClick={() => newConversation()}
               className="flex-1 rounded-full bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white transition sm:flex-none hover:scale-[1.02] dark:bg-zinc-100 dark:text-zinc-900"
             >
               New conversation
@@ -165,7 +167,10 @@ export default function PersonaView() {
         />
       )}
 
-      {ready && !updating && <Conversations personaId={id} onNew={newConversation} />}
+      {ready && !updating && <TalkPrompt data={data} onAsk={newConversation} />}
+      {ready && !updating && <Conversations personaId={id} onNew={() => newConversation()} />}
+      {ready && !updating && persona.status === "ready" && <TalkIntro data={data} onAsk={() => newConversation()} />}
+      {ready && !updating && <TalkBar data={data} onAsk={() => newConversation()} />}
 
       {ready ? (
         <Tabs data={data} act={act} personaId={id} />
@@ -363,7 +368,7 @@ function Conversations({ personaId, onNew }: { personaId: string; onNew: () => v
   );
 }
 
-const TABS = ["Soul", "About", "Research questions", "Profile", "Gaps", "Sources", "Setup"] as const;
+const TABS = ["Soul", "About", "Research questions", "People to talk to", "Profile", "Gaps", "Sources", "Setup"] as const;
 
 function Tabs({ data, act, personaId }: { data: PersonaData; act: (fn: () => Promise<unknown>) => void; personaId: string }) {
   const [tab, setTab] = useState<(typeof TABS)[number]>(data.soul ? "Soul" : "About");
@@ -395,6 +400,7 @@ function Tabs({ data, act, personaId }: { data: PersonaData; act: (fn: () => Pro
         </div>
       )}
       {tab === "Research questions" && <Answers data={data} />}
+      {tab === "People to talk to" && <PeopleTab data={data} />}
       {tab === "Profile" && <ProfileElements data={data} />}
       {tab === "Gaps" && <GapsView data={data} act={act} personaId={personaId} />}
       {tab === "Sources" && <Sources data={data} act={act} personaId={personaId} />}
@@ -667,10 +673,10 @@ function List({ label, items }: { label: string; items: string[] }) {
   );
 }
 
-const ANSWER_CLS: Record<string, string> = {
-  answered: "text-emerald-700 dark:text-emerald-400",
-  partial: "text-amber-700 dark:text-amber-400",
-  unknown: "text-zinc-500",
+const ANSWER_STYLE: Record<string, { label: string; cls: string }> = {
+  answered: { label: "Answered", cls: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" },
+  partial: { label: "Partial", cls: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300" },
+  unknown: { label: "Unknown", cls: "bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300" },
 };
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -679,23 +685,61 @@ const CATEGORY_LABEL: Record<string, string> = {
   language: "How they talk", history: "History",
 };
 
+/** One collapsible card per research question: the question and its status first, the answer on demand. */
 function Answers({ data }: { data: PersonaData }) {
   const idx = useMemo(() => buildIndex(data), [data]);
+  // null: each card's own state; true/false: everything expanded or collapsed.
+  const [all, setAll] = useState<boolean | null>(null);
   if (!data.answers.length) return <p className="text-sm text-zinc-500">No research questions.</p>;
+  const counts = data.answers.reduce<Record<string, number>>((m, a) => ((m[a.status] = (m[a.status] ?? 0) + 1), m), {});
   return (
-    <ul className="space-y-3">
-      {data.answers.map((a) => (
-        <li key={a.id} className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
-          <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
-            {a.question}
-            <span className={`text-xs uppercase ${ANSWER_CLS[a.status]}`}>{a.status}</span>
-            {a.basis && <TierBadge tier={a.basis} />}
-          </div>
-          <p className="mt-1 text-sm">{a.answer ?? "Not found in any public source. The persona will say so rather than guess."}</p>
-          <EvidenceToggle insightIds={a.insightIds} storyIds={a.storyIds} idx={idx} />
-        </li>
-      ))}
-    </ul>
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
+        <span>{data.answers.length} questions:</span>
+        {(["answered", "partial", "unknown"] as const).map((st) =>
+          counts[st] ? (
+            <span key={st} className={`rounded-full px-2 py-0.5 text-xs font-medium ${ANSWER_STYLE[st].cls}`}>
+              {counts[st]} {ANSWER_STYLE[st].label.toLowerCase()}
+            </span>
+          ) : null,
+        )}
+        <button onClick={() => setAll(all ? false : true)} className="ml-auto text-xs underline underline-offset-2">
+          {all ? "Collapse all" : "Expand all"}
+        </button>
+      </div>
+      <ul className="space-y-2">
+        {data.answers.map((a) => {
+          const st = ANSWER_STYLE[a.status] ?? ANSWER_STYLE.unknown;
+          return (
+            <li key={`${a.id}-${all}`} className="rounded-xl border border-zinc-200 dark:border-zinc-800">
+              <details open={all ?? false} className="group">
+                <summary className="flex cursor-pointer list-none items-start gap-3 p-4">
+                  <span aria-hidden className="mt-0.5 text-zinc-400 transition group-open:rotate-90">▶</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-base font-semibold leading-snug">{a.question}</span>
+                    {a.answer && (
+                      <span className="mt-1 line-clamp-2 text-sm leading-6 text-zinc-600 group-open:hidden dark:text-zinc-400">{a.answer}</span>
+                    )}
+                  </span>
+                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${st.cls}`}>{st.label}</span>
+                </summary>
+                <div className="space-y-3 px-4 pb-4 sm:pl-11">
+                  <p className="max-w-prose text-[15px] leading-7 text-zinc-800 dark:text-zinc-200">
+                    {a.answer ?? "Not found in any public source. The persona will say so rather than guess."}
+                  </p>
+                  {a.basis && (
+                    <div className="flex items-center gap-2 text-xs text-zinc-500">
+                      Based on <TierBadge tier={a.basis} />
+                    </div>
+                  )}
+                  <EvidenceToggle insightIds={a.insightIds} storyIds={a.storyIds} idx={idx} />
+                </div>
+              </details>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 
