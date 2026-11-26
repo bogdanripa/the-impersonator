@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, like, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { findPersona } from "@/lib/access";
 import { handleError, jsonError } from "@/lib/http";
@@ -53,6 +53,15 @@ export async function GET(request: Request, ctx: RouteContext<"/api/personas/[id
     ]);
 
     const run = await latestRun(id);
+    // Everything the research routine reported for this run, oldest first.
+    const runLog = run
+      ? await db
+          .select({ at: schema.appEvents.createdAt, kind: schema.appEvents.kind, level: schema.appEvents.level, message: schema.appEvents.message })
+          .from(schema.appEvents)
+          .where(and(eq(schema.appEvents.runId, run.id), like(schema.appEvents.kind, "research.%")))
+          .orderBy(asc(schema.appEvents.createdAt))
+          .limit(100)
+      : [];
     const soul = persona.version > 0 ? await getSoul(id, persona.version) : null;
     const queuePosition = persona.queuedAt ? ((await queuePositions()).get(id) ?? null) : null;
     const { builderMessages, photoData, logoData, ...rest } = persona;
@@ -66,6 +75,7 @@ export async function GET(request: Request, ctx: RouteContext<"/api/personas/[id
             createdAt: run.createdAt, updatedAt: run.updatedAt,
           }
         : null,
+      runLog,
       soul: soul ? { sections: soul.sections, sheet: soul.sheet } : null,
       deepResearchEnabled: !!(process.env.CLAUDE_ROUTINE_FIRE_URL && process.env.CLAUDE_ROUTINE_TOKEN),
     });

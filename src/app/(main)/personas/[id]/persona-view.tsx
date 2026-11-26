@@ -234,7 +234,7 @@ function useNow(intervalMs: number) {
 
 /** Minutes without a sign of life before a routine run is considered stalled. */
 const START_TIMEOUT_MIN = 10;
-const PROGRESS_TIMEOUT_MIN = 45;
+const PROGRESS_TIMEOUT_MIN = 90;
 
 /** Only shown when something is in progress or needs attention. */
 function StatusBanner({ data, act, personaId }: { data: PersonaData; act: (fn: () => Promise<unknown>) => void; personaId: string }) {
@@ -256,11 +256,21 @@ function StatusBanner({ data, act, personaId }: { data: PersonaData; act: (fn: (
       : `No progress from Claude for ${Math.round(minutes)} minutes. The session may have stopped.`
     : persona.statusDetail;
 
+  const log = data.runLog ?? [];
+  const lastNote = log.length ? (now - new Date(log[log.length - 1].at).getTime()) / 60000 : null;
   return (
-    <div className={`flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-sm ${tone}`}>
+    <div className={`rounded-lg border px-3 py-2 text-sm ${tone}`}>
+    <div className="flex flex-wrap items-center gap-2">
       {!stalled && <StatusPill status={persona.status} />}
       {busy && !stalled && <span className="animate-pulse">●</span>}
-      <span className="min-w-0 flex-1">{message}</span>
+      <span className="min-w-0 flex-1">
+        {message}
+        {runActive && lastNote != null && !stalled && (
+          <span className="ml-1 whitespace-nowrap text-xs text-zinc-500">
+            · last update {lastNote < 1 ? "just now" : `${Math.round(lastNote)} min ago`}
+          </span>
+        )}
+      </span>
       {run?.sessionUrl && (runActive || failed) && (
         <a href={run.sessionUrl} target="_blank" rel="noreferrer noopener" className="underline">
           {stalled ? "Check Claude's session" : "Watch Claude's session"}
@@ -291,6 +301,39 @@ function StatusBanner({ data, act, personaId }: { data: PersonaData; act: (fn: (
         </>
       )}
     </div>
+      {log.length > 1 && <RunLog log={log} />}
+    </div>
+  );
+}
+
+const RUN_LOG_LABEL: Record<string, string> = {
+  "research.submitted": "Submitted",
+  "research.imported": "Verified and imported",
+  "research.problem": "Problem",
+  "research.cancelled": "Cancelled",
+  "research.stalled": "Stalled",
+};
+
+/** Everything Claude reported during the run, newest first, so progress is visible between notes. */
+function RunLog({ log }: { log: NonNullable<PersonaData["runLog"]> }) {
+  const items = [...log].reverse();
+  return (
+    <details className="mt-2 border-t border-current/10 pt-2">
+      <summary className="cursor-pointer text-xs text-zinc-500">Progress log ({log.length})</summary>
+      <ol className="mt-2 space-y-1.5">
+        {items.map((e, i) => (
+          <li key={i} className="flex gap-3 text-xs leading-5">
+            <time className="w-16 shrink-0 whitespace-nowrap tabular-nums text-zinc-500">
+              {new Date(e.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            </time>
+            <span className={`min-w-0 [overflow-wrap:anywhere] ${e.level === "warn" || e.level === "error" ? "text-amber-700 dark:text-amber-400" : "text-zinc-700 dark:text-zinc-300"}`}>
+              {RUN_LOG_LABEL[e.kind] && e.kind !== "research.progress" ? <strong className="font-medium">{RUN_LOG_LABEL[e.kind]}: </strong> : null}
+              {e.message}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </details>
   );
 }
 

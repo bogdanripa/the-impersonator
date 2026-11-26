@@ -40,6 +40,8 @@ export type PersonaData = {
   researchRun: {
     id: string; mode: string; status: string; detail: string | null; sessionUrl: string | null; createdAt: string; updatedAt: string;
   } | null;
+  /** What the research routine reported for the latest run (progress notes, problems, milestones). */
+  runLog?: { at: string; kind: string; level: string; message: string }[];
   deepResearchEnabled: boolean;
   soul: { sections: SoulSection[]; sheet: SoulSheet } | null;
 };

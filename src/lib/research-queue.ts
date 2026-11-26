@@ -51,7 +51,7 @@ export async function processResearchQueue() {
 }
 
 const START_TIMEOUT_MS = 15 * 60_000;
-const SILENCE_TIMEOUT_MS = 60 * 60_000;
+const SILENCE_TIMEOUT_MS = 90 * 60_000;
 
 /**
  * Routine sessions can die without telling us. A run that never started, or went silent, is
