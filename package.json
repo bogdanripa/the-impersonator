@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "drizzle-kit migrate && next build",
+    "build": "if [ -n \"$DATABASE_URL$DATABASE_URL_UNPOOLED\" ]; then drizzle-kit migrate; else echo 'No database configured (e.g. a preview): skipping migrations'; fi && next build",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",

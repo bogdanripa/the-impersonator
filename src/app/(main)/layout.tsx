@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Logo } from "@/components/logo";
 import type { ReactNode } from "react";
 import { NewPersonaButton } from "@/components/new-persona-button";
 import { AccountMenu } from "@/components/account-menu";
@@ -9,7 +10,7 @@ export default function MainLayout({ children }: { children: ReactNode }) {
     <>
       <header className="border-b border-zinc-200 dark:border-zinc-800">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
-          <Link href="/" className="font-semibold tracking-tight">The Impersonator</Link>
+          <Link href="/" aria-label="The Impersonator, all personas"><Logo /></Link>
           <div className="flex items-center gap-2">
             <AccountMenu />
             <NewPersonaButton />

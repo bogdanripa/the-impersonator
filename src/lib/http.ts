@@ -8,6 +8,8 @@ export function jsonError(message: string, status = 400) {
 
 /** Maps errors to safe client messages; full detail goes to the server log. */
 export function handleError(err: unknown) {
+  // Next.js signals "this route must run per request" by throwing during prerendering: let it through.
+  if ((err as { digest?: string })?.digest === "DYNAMIC_SERVER_USAGE") throw err;
   console.error(err);
   void import("@/lib/events").then(({ logEvent, errorData }) =>
     logEvent({ kind: "server.error", level: "error", message: (err as Error)?.message ?? String(err), actor: "system", data: errorData(err) }),

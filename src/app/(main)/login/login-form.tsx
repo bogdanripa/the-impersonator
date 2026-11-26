@@ -1,6 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
+import { LogoMark } from "@/components/logo";
 
 export default function LoginForm() {
   const params = useSearchParams();
@@ -8,6 +9,7 @@ export default function LoginForm() {
   const next = params.get("next") ?? "/";
   return (
     <div className="mx-auto mt-24 max-w-sm space-y-4 text-center">
+      <LogoMark size={56} className="mx-auto" />
       <h1 className="text-xl font-semibold">Sign in</h1>
       <p className="text-sm text-zinc-500">
         Sign in with Google. With a company account, you share personas and conversations with colleagues on the same domain; a

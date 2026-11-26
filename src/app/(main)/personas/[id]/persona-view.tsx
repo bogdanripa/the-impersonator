@@ -95,7 +95,11 @@ export default function PersonaView() {
 
   return (
     <div className="space-y-6">
-      <Link href="/" className="text-xs text-zinc-500 hover:underline">← All personas</Link>
+      <div className="pb-3">
+        <Link href="/" className="inline-flex items-center gap-1 py-1 pr-2 text-sm text-zinc-500 hover:text-zinc-900 hover:underline dark:hover:text-zinc-100">
+          ← All personas
+        </Link>
+      </div>
 
       {/* Header: who, and the main action */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center">

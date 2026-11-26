@@ -27,7 +27,7 @@ export const config = {
     {
       // Sign-in routes, Workflow's internal routes, and the routine-facing research API
       // (authenticated with its own bearer token) bypass the Google sign-in gate.
-      source: "/((?!_next/static|_next/image|favicon.ico|login|api/auth/|api/research/|.well-known/workflow/).*)",
+      source: "/((?!_next/static|_next/image|favicon.ico|icon.svg|apple-icon.png|login|api/auth/|api/research/|.well-known/workflow/).*)",
     },
   ],
 };

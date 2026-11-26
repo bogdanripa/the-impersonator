@@ -86,7 +86,11 @@ export default function ActivityView() {
 
   return (
     <div className="space-y-4">
-      <Link href="/" className="text-xs text-zinc-500 hover:underline">← All personas</Link>
+      <div className="pb-3">
+        <Link href="/" className="inline-flex items-center gap-1 py-1 pr-2 text-sm text-zinc-500 hover:text-zinc-900 hover:underline dark:hover:text-zinc-100">
+          ← All personas
+        </Link>
+      </div>
       <div>
         <h1 className="text-xl font-semibold">{all ? "Admin: all workspaces" : "Activity log"}</h1>
         <p className="mt-1 text-sm text-zinc-500">

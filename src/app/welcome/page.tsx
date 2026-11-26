@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Logo, LogoMark } from "@/components/logo";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { TierBadge } from "@/components/ui";
@@ -28,6 +29,7 @@ export default function Welcome() {
         <FinalCta />
       </main>
       <footer className="border-t border-zinc-200 px-4 py-8 text-center text-xs text-zinc-500 dark:border-zinc-800">
+        <div className="mb-3 flex justify-center text-sm text-zinc-700 dark:text-zinc-300"><Logo size={24} /></div>
         The Impersonator builds simulations from public statements. It is not the real person and does not speak for them.
       </footer>
     </div>
@@ -60,7 +62,7 @@ function Nav() {
   return (
     <header className="sticky top-0 z-10 border-b border-zinc-200/70 bg-[var(--background)]/85 backdrop-blur dark:border-zinc-800/70">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
-        <Link href="/" className="font-semibold tracking-tight">The Impersonator</Link>
+        <Link href="/" aria-label="The Impersonator"><Logo /></Link>
         <nav className="flex items-center gap-5 text-sm">
           <a href="#how" className="hidden text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 sm:inline">How it works</a>
           <a href="#evidence" className="hidden text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 sm:inline">Evidence</a>
@@ -392,6 +394,7 @@ function FinalCta() {
   return (
     <section className="border-t border-zinc-200 px-4 py-20 dark:border-zinc-800">
       <div className="mx-auto max-w-3xl text-center">
+        <LogoMark size={56} className="mx-auto mb-5" />
         <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">Who would you like to talk to?</h2>
         <p className="mx-auto mt-4 max-w-xl text-lg text-zinc-600 dark:text-zinc-400">
           Name a real person who represents your buyer. We&apos;ll do the research and show our work.
