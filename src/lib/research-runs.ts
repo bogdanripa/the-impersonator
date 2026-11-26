@@ -3,6 +3,8 @@ import { db, schema } from "@/lib/db";
 import { checkSource, importSeedPersona, SeedPersonaSchema, type SourceCheck } from "@/lib/seed";
 import { timingSafeEqual } from "@/lib/auth";
 import { attachmentUrl } from "@/lib/attachments";
+import { logEvent } from "@/lib/events";
+import { jsonError } from "@/lib/http";
 
 /** Bearer-token check for the routine-facing API (RESEARCH_API_TOKEN). */
 export function researchApiAuthorized(request: Request): boolean {
@@ -11,6 +13,19 @@ export function researchApiAuthorized(request: Request): boolean {
   const header = request.headers.get("authorization") ?? "";
   const given = header.startsWith("Bearer ") ? header.slice(7) : "";
   return timingSafeEqual(given, expected);
+}
+
+/** The 401 for a refused research token, logged so routine setup problems show up. */
+export async function researchUnauthorized(request: Request) {
+  const hasHeader = !!request.headers.get("authorization");
+  await logEvent({
+    kind: "research.unauthorized",
+    level: "warn",
+    message: `Research API refused a request without a valid token: ${new URL(request.url).pathname}`,
+    actor: "routine",
+    data: { path: new URL(request.url).pathname, authorizationHeader: hasHeader ? "present, wrong" : "missing", userAgent: request.headers.get("user-agent") },
+  });
+  return jsonError("Unauthorized", 401);
 }
 
 export async function latestRun(personaId: string) {
@@ -87,6 +102,25 @@ export async function importRun(runId: string) {
   const res = await importSeedPersona(seed, checks, { personaId: persona.id, soul: false });
   const after = await db.query.personas.findFirst({ where: eq(schema.personas.id, persona.id) });
   await updateRun(run.id, { status: res.ok ? "done" : "failed", detail: after?.statusDetail ?? null });
+  const rejected = checks.flatMap((c) => c.rejected.map((r) => ({ url: c.source.url, quote: r.quote.slice(0, 200), reason: r.reason })));
+  const unreadable = checks.filter((c) => c.error).map((c) => ({ url: c.source.url, error: c.error }));
+  const wrongSubject = checks.filter((c) => !c.error && !c.subjectOk).map((c) => ({ url: c.source.url, reason: c.subjectReason }));
+  const accepted = checks.reduce((n, c) => n + Object.keys(c.accepted.insights).length + Object.keys(c.accepted.stories).length, 0);
+  await logEvent({
+    kind: "research.imported",
+    level: res.ok ? (rejected.length || unreadable.length || wrongSubject.length ? "warn" : "info") : "error",
+    message: res.ok
+      ? `Research imported: ${accepted} quotes verified, ${rejected.length} rejected, ${unreadable.length} sources unreadable`
+      : `Research import failed: ${after?.statusDetail ?? "unknown reason"}`,
+    actor: "system",
+    personaId: persona.id,
+    runId: run.id,
+    durationMs: Date.now() - new Date(run.createdAt).getTime(),
+    data: {
+      ok: res.ok, version: after?.version, sources: checks.length, accepted, statusDetail: after?.statusDetail,
+      rejected: rejected.slice(0, 40), unreadable: unreadable.slice(0, 40), wrongSubject: wrongSubject.slice(0, 40),
+    },
+  });
   await db
     .update(schema.personaGaps)
     .set({ status: res.ok ? "researched" : "open" })

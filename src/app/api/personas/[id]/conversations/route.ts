@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { findPersona } from "@/lib/access";
 import { handleError, jsonError } from "@/lib/http";
+import { logEvent } from "@/lib/events";
 
 /** Starts a new conversation. Each one starts fresh, with no memory of others. */
 export async function POST(request: Request, ctx: RouteContext<"/api/personas/[id]/conversations">) {
@@ -15,6 +16,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/personas/[i
       .insert(schema.conversations)
       .values({ personaId: id, personaVersion: persona.version, createdBy: request.headers.get("x-user-email") })
       .returning({ id: schema.conversations.id });
+    await logEvent({ kind: "conversation.created", message: "New conversation", actor: request.headers.get("x-user-email"), personaId: id, conversationId: row.id });
     return NextResponse.json({ id: row.id });
   } catch (err) {
     return handleError(err);

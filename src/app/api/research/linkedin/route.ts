@@ -1,5 +1,5 @@
 import { handleError, jsonError } from "@/lib/http";
-import { researchApiAuthorized } from "@/lib/research-runs";
+import { researchApiAuthorized, researchUnauthorized } from "@/lib/research-runs";
 import { fetchLinkedIn, LinkedInUnavailableError, linkedinTarget } from "@/lib/linkedin";
 
 // Reading a profile or posts through Apify can take a couple of minutes.
@@ -11,7 +11,7 @@ export const maxDuration = 300;
  */
 export async function GET(request: Request) {
   try {
-    if (!researchApiAuthorized(request)) return jsonError("Unauthorized", 401);
+    if (!researchApiAuthorized(request)) return researchUnauthorized(request);
     const target = linkedinTarget(new URL(request.url).searchParams.get("url") ?? "");
     if (!target) return jsonError("Not a LinkedIn profile, posts or post URL", 400);
     const page = await fetchLinkedIn(target);

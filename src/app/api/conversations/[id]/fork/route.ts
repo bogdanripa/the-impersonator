@@ -3,6 +3,7 @@ import { asc, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { findConversation } from "@/lib/access";
 import { handleError, jsonError } from "@/lib/http";
+import { logEvent } from "@/lib/events";
 
 /**
  * Continues a shared conversation as the viewer's own copy: same persona version, the full history
@@ -56,6 +57,10 @@ export async function POST(request: Request, ctx: RouteContext<"/api/conversatio
         );
       }
       return copy.id;
+    });
+    await logEvent({
+      kind: "conversation.forked", message: "Shared conversation continued as a copy",
+      actor: viewer, personaId: source.personaId, conversationId: newId, data: { from: id, fromBy: source.createdBy },
     });
     return NextResponse.json({ id: newId });
   } catch (err) {

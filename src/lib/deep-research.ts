@@ -2,7 +2,8 @@ import { eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { updateRun } from "@/lib/research-runs";
 import { refreshPersonaMedia } from "@/lib/media";
-import type { Icp } from "@/lib/types";
+import { logEvent } from "@/lib/events";
+import { missingAnchor, type Icp } from "@/lib/types";
 
 export class DeepResearchError extends Error {
   constructor(message: string, public status: number) {
@@ -23,6 +24,10 @@ export async function startDeepResearch(personaId: string, opts: { requestedBy: 
   const persona = await db.query.personas.findFirst({ where: eq(schema.personas.id, personaId) });
   if (!persona) throw new DeepResearchError("Persona not found", 404);
   if (!persona.icp) throw new DeepResearchError("Confirm the persona setup first", 400);
+  const missing = missingAnchor(opts.setup ?? (persona.version > 0 ? (persona.pendingIcp ?? persona.icp) : persona.icp));
+  if (missing.length) {
+    throw new DeepResearchError(`Choose a real, named person to simulate first (missing: ${missing.join(", ")}).`, 400);
+  }
   if (["discovering", "extracting", "synthesizing"].includes(persona.status)) throw new DeepResearchError("Research is already running", 409);
 
   const mode = persona.version > 0 ? "update" : "new";
@@ -45,6 +50,7 @@ export async function startDeepResearch(personaId: string, opts: { requestedBy: 
   const body = (await res.json().catch(() => ({}))) as { claude_code_session_url?: string };
   if (!res.ok) {
     await updateRun(run.id, { status: "failed", detail: `Routine fire failed (HTTP ${res.status})` });
+    await logEvent({ kind: "research.fire_failed", level: "error", message: `Couldn't start the research routine (HTTP ${res.status})`, actor: opts.requestedBy, personaId, runId: run.id, data: { status: res.status, body } });
     console.error("Routine fire failed", res.status, body);
     throw new DeepResearchError(
       res.status === 429 ? "The research routine is rate limited. Try again later." : "Couldn't start the research routine.",
@@ -52,6 +58,15 @@ export async function startDeepResearch(personaId: string, opts: { requestedBy: 
     );
   }
   await updateRun(run.id, { sessionUrl: body.claude_code_session_url ?? null, detail: "Routine started" });
+  const icp = setup ?? persona.icp;
+  await logEvent({
+    kind: "research.started",
+    message: `Claude research started (${mode}) for ${icp.anchor_name}`,
+    actor: opts.requestedBy,
+    personaId,
+    runId: run.id,
+    data: { mode, sessionUrl: body.claude_code_session_url ?? null, focus: icp.research_focus, questions: icp.research_questions },
+  });
   await db
     .update(schema.personas)
     .set({

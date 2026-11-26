@@ -3,6 +3,7 @@ import { desc, eq, sql } from "drizzle-orm";
 import { viewerOrg } from "@/lib/access";
 import { db, schema } from "@/lib/db";
 import { handleError } from "@/lib/http";
+import { logEvent } from "@/lib/events";
 import { processResearchQueue, queuePositions } from "@/lib/research-queue";
 
 export async function GET(request: Request) {
@@ -40,6 +41,7 @@ export async function POST(request: Request) {
       .insert(schema.personas)
       .values({ org: viewerOrg(request), createdBy: request.headers.get("x-user-email") })
       .returning({ id: schema.personas.id });
+    await logEvent({ kind: "persona.created", message: "New persona started", actor: request.headers.get("x-user-email"), personaId: persona.id });
     return NextResponse.json({ id: persona.id });
   } catch (err) {
     return handleError(err);

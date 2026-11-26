@@ -35,3 +35,16 @@ export const IcpSchema = z.object({
     .describe("What the next research run should focus on (e.g. 'newer interviews since 2025; budget split; AI'). Empty for a first run if there's nothing specific."),
 });
 export type Icp = z.infer<typeof IcpSchema>;
+
+/**
+ * Why a setup can't be researched yet: every persona is ONE real, named person. Empty when it can.
+ * (Research once started on a setup with no person at all; the routine rightly refused.)
+ */
+export function missingAnchor(icp: Pick<Icp, "anchor_name" | "anchor_role" | "anchor_company"> | null | undefined): string[] {
+  if (!icp) return ["the person to simulate"];
+  const missing: string[] = [];
+  if (icp.anchor_name.trim().split(/\s+/).length < 2) missing.push("the person's full name");
+  if (!icp.anchor_role.trim()) missing.push("their role");
+  if (!icp.anchor_company.trim()) missing.push("their company");
+  return missing;
+}

@@ -3,6 +3,7 @@
  *
  *   npm run research-api -- context  <run_id>                  → writes seeds/run-<run_id>.context.json
  *   npm run research-api -- progress <run_id> "<message>"
+ *   npm run research-api -- problem  <run_id> "<what went wrong>"   → logged for the team, not shown as progress
  *   npm run research-api -- submit   <run_id> <seed-file.json>
  *
  * The app URL comes from RESEARCH_APP_URL (set in the routine's environment), never from the
@@ -29,7 +30,7 @@ async function call(path: string, init?: { method?: string; body?: unknown }) {
 async function main() {
   const [cmd, runId, arg] = process.argv.slice(2);
   if (!cmd || !runId || !/^[0-9a-f-]{36}$/.test(runId)) {
-    throw new Error("Usage: research-api <context|progress|submit> <run_id> [message|file]");
+    throw new Error("Usage: research-api <context|progress|problem|submit> <run_id> [message|file]");
   }
   if (cmd === "context") {
     const ctx = await call(`/api/research/runs/${runId}`);
@@ -41,6 +42,10 @@ async function main() {
     if (!arg) throw new Error("progress needs a message");
     await call(`/api/research/runs/${runId}/progress`, { method: "POST", body: { message: arg } });
     console.log("ok");
+  } else if (cmd === "problem") {
+    if (!arg) throw new Error("problem needs a message");
+    await call(`/api/research/runs/${runId}/progress`, { method: "POST", body: { message: arg, kind: "problem" } });
+    console.log("logged");
   } else if (cmd === "submit") {
     if (!arg) throw new Error("submit needs a seed file");
     const raw = JSON.parse(readFileSync(arg, "utf8"));

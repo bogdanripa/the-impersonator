@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { eq, gte, isNull, lt, or, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
+import { logEvent } from "@/lib/events";
 
 /**
  * LinkedIn shows profiles and posts only to signed-in members, so we read them through Apify
@@ -222,6 +223,7 @@ async function runActor<T>(target: PageTarget, actor: string, input: unknown, ma
   const budget = monthlyBudgetUsd();
   const spent = await spentThisMonthUsd();
   if (spent + worstCase > budget) {
+    await logEvent({ kind: "linkedin.budget_reached", level: "warn", message: `LinkedIn budget reached ($${spent.toFixed(2)} of $${budget.toFixed(2)}); not reading ${target.url}`, actor: "system", data: { url: target.url } });
     throw new LinkedInUnavailableError(
       `This month's LinkedIn budget ($${budget.toFixed(2)}) is used up; pages read before still work. ${UPLOAD_HINT}`,
     );
@@ -252,6 +254,13 @@ async function runActor<T>(target: PageTarget, actor: string, input: unknown, ma
       .insert(schema.linkedinScrapes)
       .values({ url: target.url, actor, items: items.length, costUsd: unit * items.length, ok })
       .catch((err) => console.error("Couldn't log LinkedIn scrape", err));
+    await logEvent({
+      kind: "linkedin.read",
+      level: ok ? "info" : "warn",
+      message: `${ok ? "Read" : "Couldn't read"} LinkedIn ${target.kind}: ${target.url} (${items.length} items, ~$${(unit * items.length).toFixed(3)})`,
+      actor: "system",
+      data: { url: target.url, actor, items: items.length, costUsd: unit * items.length, ok },
+    });
   }
 }
 

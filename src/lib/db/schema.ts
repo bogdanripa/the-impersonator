@@ -442,3 +442,27 @@ export const linkedinScrapes = pgTable(
   },
   (t) => [index("linkedin_scrapes_created").on(t.createdAt)],
 );
+
+/**
+ * What happened, for learning from production: setup chats, research runs (with the routine's
+ * progress notes and reported problems), chat replies, LinkedIn reads, failures. Vercel keeps
+ * runtime logs for an hour; this keeps them. `org` scopes what each company sees (null: system-wide).
+ */
+export const appEvents = pgTable(
+  "app_events",
+  {
+    id: id(),
+    createdAt: createdAt(),
+    org: text("org"),
+    actor: text("actor"),
+    kind: text("kind").notNull(),
+    level: text("level").notNull().default("info"), // info | warn | error
+    message: text("message").notNull(),
+    personaId: uuid("persona_id"),
+    conversationId: uuid("conversation_id"),
+    runId: uuid("run_id"),
+    durationMs: integer("duration_ms"),
+    data: jsonb("data").$type<Record<string, unknown>>(),
+  },
+  (t) => [index("app_events_org_created").on(t.org, t.createdAt), index("app_events_persona").on(t.personaId)],
+);

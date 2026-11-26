@@ -1,12 +1,19 @@
 import { z } from "zod";
 import { zodResponsesFunction } from "openai/helpers/zod";
 import { checkResponse, llm, MODEL } from "@/lib/llm";
-import { IcpSchema, type Icp } from "@/lib/types";
+import { IcpSchema, missingAnchor, type Icp } from "@/lib/types";
 import { fetchSource, LoginWallError } from "@/lib/fetch-source";
 import { attachmentUrl } from "@/lib/attachments";
 
 /** Builder transcript as stored in the DB and replayed to the model. */
 export type BuilderMessage = { role: "user" | "assistant"; content: string; icp?: Icp };
+export type BuilderTrace = {
+  searches: string[];
+  reads: { url: string; ok: boolean; result: string }[];
+  /** Setups the model proposed without a real, named person (not shown to the user). */
+  refused: string[];
+  rounds: number;
+};
 
 const INSTRUCTIONS = `You help a product team set up a persona in The Impersonator.
 
@@ -32,6 +39,7 @@ Your job:
   Suggest good ones for the role. For a marketing leader, for example: total marketing budget; how it splits across buckets (brand, performance, agencies, martech, events, headcount); which areas they own personally vs delegate, and to whom; how their team is structured; their opinion on how AI is changing their world.
   Be honest that private facts like budgets are only knowable if they've been stated publicly (by the person, in company filings, earnings calls or press). Otherwise the persona will say it's unknown rather than guess, and may only offer what peers say.
 - Set research_focus to anything specific the research run should prioritise (or leave it empty).
+- Only call propose_icp once there is ONE real, named person (full name, current role, current company). If the user only described a segment or a role ("the head of safety at X") and you can't find the actual person, suggest 2-3 real people and let them choose; never propose a setup with an empty or placeholder person.
 - When everything is confirmed, call propose_icp. Put the URLs that confirmed the person's identity in identity_evidence. Don't also write it out in prose, since the app shows it as a card. Propose a revised version whenever the user asks for changes.
 Keep replies short.`;
 
@@ -103,25 +111,46 @@ export async function builderTurn(
 
   let icp: Icp | null = null;
   let reads = 0;
-  for (let round = 0; round <= MAX_READS; round++) {
+  // What the model did this turn, for the activity log.
+  const trace: BuilderTrace = { searches: [], reads: [], refused: [], rounds: 0 };
+  const noteSearches = (out: readonly { type: string }[]) => {
+    for (const o of out as { type: string; action?: { query?: string } }[]) {
+      if (o.type === "web_search_call" && o.action?.query) trace.searches.push(o.action.query);
+    }
+  };
+  for (let round = 0; round <= MAX_READS + 1; round++) {
     checkResponse(response);
+    trace.rounds++;
+    noteSearches(response.output);
     const calls = response.output.filter(
       (o): o is Extract<(typeof response.output)[number], { type: "function_call" }> => o.type === "function_call",
     );
+    // A setup without one real, named person can't be researched: don't show it, send the model back.
+    const refused = new Map<string, string>();
     for (const call of calls) {
       if (call.name !== "propose_icp") continue;
       const parsed = IcpSchema.safeParse(call.parsed_arguments);
-      if (parsed.success) icp = parsed.data;
+      if (!parsed.success) continue;
+      const missing = missingAnchor(parsed.data);
+      if (missing.length) {
+        trace.refused.push(missing.join(", "));
+        refused.set(
+          call.call_id,
+          `NOT shown to the user: the setup is missing ${missing.join(", ")}. Every persona is ONE real, named person, and research can't start without one. ` +
+            "Don't propose a setup yet: ask the user to choose a person, suggesting 2-3 real, representative people (full name, current role, company) and why each is typical, or ask for a name.",
+        );
+      } else icp = parsed.data;
     }
     const pageCalls = calls.filter((c) => c.name === "read_page");
-    if (!pageCalls.length) break;
+    if (!pageCalls.length && !refused.size) break;
     // Every call in the response needs an output before the model continues.
     const outputs = await Promise.all(
       calls.map(async (call) => {
-        let output = "Shown to the user.";
+        let output = refused.get(call.call_id) ?? "Shown to the user.";
         if (call.name === "read_page") {
           const url = String((JSON.parse(call.arguments || "{}") as { url?: string }).url ?? "");
           output = reads++ < MAX_READS && url ? await readPageForBuilder(url) : "Page limit reached for this turn.";
+          trace.reads.push({ url, ok: output.startsWith("Title:"), result: output.slice(0, 300) });
         }
         return { type: "function_call_output" as const, call_id: call.call_id, output };
       }),
@@ -134,11 +163,12 @@ export async function builderTurn(
     });
   }
   checkResponse(response);
+  noteSearches(response.output);
   const reply =
     finalReplyText(response.output) ||
     (icp ? "Here's who I'd simulate and who I'd use as peers. Confirm it, or tell me what to change." : "");
   messages.push({ role: "assistant", content: reply, ...(icp ? { icp } : {}) });
-  return { messages, reply, icp };
+  return { messages, reply, icp, trace };
 }
 
 /**

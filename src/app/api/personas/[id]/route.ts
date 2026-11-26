@@ -3,6 +3,7 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { findPersona } from "@/lib/access";
 import { handleError, jsonError } from "@/lib/http";
+import { logEvent } from "@/lib/events";
 import type { BuilderMessage } from "@/lib/builder";
 import { latestRun } from "@/lib/research-runs";
 import { getSoul } from "@/lib/soul";
@@ -76,7 +77,12 @@ export async function GET(request: Request, ctx: RouteContext<"/api/personas/[id
 export async function DELETE(request: Request, ctx: RouteContext<"/api/personas/[id]">) {
   try {
     const { id } = await ctx.params;
-    if (!(await findPersona(request, id))) return jsonError("Persona not found", 404);
+    const doomed = await findPersona(request, id);
+    if (!doomed) return jsonError("Persona not found", 404);
+    await logEvent({
+      kind: "persona.deleted", level: "warn", message: `Persona deleted: ${doomed.icp?.anchor_name ?? doomed.name}`,
+      actor: request.headers.get("x-user-email"), org: doomed.org, data: { personaId: id, name: doomed.name, version: doomed.version },
+    });
     await db.delete(schema.personas).where(eq(schema.personas.id, id));
     return NextResponse.json({ ok: true });
   } catch (err) {

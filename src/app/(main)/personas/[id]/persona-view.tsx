@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api } from "@/lib/api-client";
-import type { Icp } from "@/lib/types";
+import { missingAnchor, type Icp } from "@/lib/types";
 import type { PersonaData, Source } from "@/lib/client-types";
 import { Button, StatusPill, TierBadge } from "@/components/ui";
 import { buildIndex, EvidenceToggle } from "@/components/evidence";
@@ -78,6 +78,7 @@ export default function PersonaView() {
     ...(ready && !busy && persona.soulStatus !== "generating"
       ? [{ label: data.soul ? "Rewrite soul" : "Write soul", onClick: () => act(() => api(`/api/personas/${id}/soul`, { method: "POST" })) }]
       : []),
+    { label: "Activity log", onClick: () => router.push(`/activity?persona=${id}`) },
     {
       label: "Delete persona",
       danger: true,
@@ -559,7 +560,13 @@ function Builder({
         />
         <Button type="submit" disabled={!!pending}>Send</Button>
       </form>
-      {icp && (
+      {icp && missingAnchor(icp).length > 0 && (
+        <p className="rounded border border-amber-300 p-3 text-sm text-amber-800 dark:border-amber-900 dark:text-amber-300">
+          Research needs one real, named person to simulate (missing: {missingAnchor(icp).join(", ")}). Tell me who, or ask me to
+          suggest a few people who fit.
+        </p>
+      )}
+      {icp && missingAnchor(icp).length === 0 && (
         <div className="flex flex-col gap-3 rounded border border-emerald-300 p-3 dark:border-emerald-900 sm:flex-row sm:items-center">
           <p className="flex-1 text-sm">
             Happy with the setup above?{" "}

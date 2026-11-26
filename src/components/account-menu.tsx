@@ -33,7 +33,10 @@ export function AccountMenu() {
                 ? `Personas and conversations are shared with everyone who signs in with a ${me.org} Google account.`
                 : "Personal account: your personas and conversations are private to you. Sign in with a company Google account to share them with colleagues."}
             </p>
-            <form action="/api/auth/logout" method="post" className="mt-3">
+            <a href="/activity" className="mt-3 block w-full rounded border border-zinc-300 px-3 py-2 text-center dark:border-zinc-700">
+              Activity log
+            </a>
+            <form action="/api/auth/logout" method="post" className="mt-2">
               <button type="submit" className="w-full rounded border border-zinc-300 px-3 py-2 dark:border-zinc-700">
                 Sign out
               </button>

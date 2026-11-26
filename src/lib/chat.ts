@@ -2,6 +2,7 @@ import { z } from "zod";
 import { zodTextFormat } from "openai/helpers/zod";
 import { and, asc, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
+import { errorData, logEvent } from "@/lib/events";
 import { checkResponse, llm, MODEL } from "@/lib/llm";
 import { getSoul } from "@/lib/soul";
 import { liveLookup } from "@/lib/live";
@@ -363,8 +364,24 @@ export const REPLY_TIMEOUT_MS = 6 * 60_000;
 
 /** Runs a reply in the background and records how it ended on the conversation. */
 export async function runReply(conversationId: string) {
+  const started = Date.now();
+  const conv = await db.query.conversations.findFirst({ where: eq(schema.conversations.id, conversationId) }).catch(() => null);
   try {
-    await personaReply(conversationId);
+    const { persona: reply } = await personaReply(conversationId);
+    await logEvent({
+      kind: "chat.reply",
+      level: reply.ungrounded ? "warn" : "info",
+      message: reply.ungrounded ? "Persona replied without citing evidence" : "Persona replied",
+      actor: conv?.createdBy ?? null,
+      personaId: conv?.personaId ?? null,
+      conversationId,
+      durationMs: Date.now() - started,
+      data: {
+        insights: reply.insightIds.length, stories: reply.storyIds.length, live: reply.liveIds.length,
+        ungrounded: reply.ungrounded, paragraphs: reply.segments?.length ?? 0,
+        noEvidenceParagraphs: reply.segments?.filter((x) => x.noEvidence).length ?? 0,
+      },
+    });
     // A failed title never fails the reply.
     await refreshConversationTitle(conversationId).catch((err) => console.error("Conversation title failed", conversationId, err));
     await db
@@ -373,6 +390,10 @@ export async function runReply(conversationId: string) {
       .where(eq(schema.conversations.id, conversationId));
   } catch (err) {
     console.error("Persona reply failed", conversationId, err);
+    await logEvent({
+      kind: "chat.error", level: "error", message: `Persona reply failed: ${(err as Error).message}`,
+      actor: conv?.createdBy ?? null, personaId: conv?.personaId ?? null, conversationId, durationMs: Date.now() - started, data: errorData(err),
+    });
     await db
       .update(schema.conversations)
       .set({ replyStatus: "failed", replyError: (err as Error).message?.slice(0, 500) || "The reply failed." })

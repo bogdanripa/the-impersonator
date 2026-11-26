@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { DeepResearchError, startDeepResearch } from "@/lib/deep-research";
+import { logEvent } from "@/lib/events";
 
 const ACTIVE_RUN = ["requested", "researching", "verifying"];
 const BUSY: ("discovering" | "extracting" | "synthesizing")[] = ["discovering", "extracting", "synthesizing"];
@@ -40,6 +41,7 @@ export async function processResearchQueue() {
     return await startDeepResearch(next.id, { requestedBy: "research queue", origin: process.env.APP_URL ?? "" });
   } catch (err) {
     const message = err instanceof DeepResearchError ? err.message : (err as Error).message;
+    await logEvent({ kind: "research.queue_start_failed", level: "error", message: `Couldn't start queued research: ${message}`, actor: "research queue", personaId: next.id });
     await db
       .update(schema.personas)
       .set({ status: "failed", statusDetail: `Couldn't start queued research: ${message}` })
@@ -69,6 +71,11 @@ async function failStalledRuns() {
       .set({ status: "failed", detail: `Stalled: no word from Claude for ${Math.round(idle / 60_000)} minutes`, updatedAt: new Date() })
       .where(eq(schema.researchRuns.id, run.id));
     await db.update(schema.personaGaps).set({ status: "open", runId: null }).where(eq(schema.personaGaps.runId, run.id));
+    await logEvent({
+      kind: "research.stalled", level: "error",
+      message: `Research run marked stalled: no word from Claude for ${Math.round(idle / 60_000)} minutes (${run.status})`,
+      actor: "system", personaId: run.personaId, runId: run.id, data: { lastNote: run.detail, sessionUrl: run.sessionUrl },
+    });
     const persona = await db.query.personas.findFirst({ where: eq(schema.personas.id, run.personaId) });
     if (persona && BUSY.includes(persona.status as (typeof BUSY)[number])) {
       await db

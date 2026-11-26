@@ -8,6 +8,7 @@ import { handleError, jsonError } from "@/lib/http";
 import { sameName } from "@/lib/research";
 import { nameKey } from "@/lib/verify";
 import { refreshPersonaMedia } from "@/lib/media";
+import { errorData, logEvent } from "@/lib/events";
 
 export const maxDuration = 300;
 
@@ -16,10 +17,16 @@ export const maxDuration = 300;
  * update chat whose revised setup stays pending until the update research is launched.
  */
 export async function POST(request: Request, ctx: RouteContext<"/api/personas/[id]/builder">) {
+  const started = Date.now();
+  const actor = request.headers.get("x-user-email");
+  let personaId: string | null = null;
+  let userText = "";
   try {
     const { id } = await ctx.params;
+    personaId = id;
     const { text } = (await request.json().catch(() => ({}))) as { text?: string };
     if (!text?.trim()) return jsonError("Message is empty");
+    userText = text.trim();
     const persona = await findPersona(request, id);
     if (!persona) return jsonError("Persona not found", 404);
 
@@ -34,7 +41,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/personas/[i
       .from(schema.attachments)
       .where(eq(schema.attachments.personaId, id))
       .orderBy(asc(schema.attachments.createdAt));
-    const { messages, reply, icp } = await builderTurn(history, text.trim(), current, files);
+    const { messages, reply, icp, trace } = await builderTurn(history, text.trim(), current, files);
 
     let proposal = icp;
     let note: string | null = null;
@@ -58,8 +65,25 @@ export async function POST(request: Request, ctx: RouteContext<"/api/personas/[i
       .where(eq(schema.personas.id, id));
     // New persona: load the photo and logo for the card as soon as the setup is proposed.
     if (proposal && !isUpdate) await refreshPersonaMedia(id).catch(() => null);
+    await logEvent({
+      kind: "builder.turn",
+      level: trace.refused.length || trace.reads.some((r) => !r.ok) ? "warn" : "info",
+      message: proposal
+        ? `Setup proposed: ${proposal.anchor_name}, ${proposal.anchor_role} at ${proposal.anchor_company}`
+        : trace.refused.length
+          ? `Setup without a named person refused (missing ${trace.refused[0]})`
+          : "Setup chat reply",
+      actor,
+      personaId: id,
+      durationMs: Date.now() - started,
+      data: { mode: isUpdate ? "update" : "create", user: userText, reply: note ?? reply, files: files.length, ...trace, proposal, note },
+    });
     return NextResponse.json({ reply: note ?? reply, icp: proposal });
   } catch (err) {
+    await logEvent({
+      kind: "builder.error", level: "error", message: `Setup chat failed: ${(err as Error).message}`,
+      actor, personaId, durationMs: Date.now() - started, data: { user: userText, ...errorData(err) },
+    });
     return handleError(err);
   }
 }
