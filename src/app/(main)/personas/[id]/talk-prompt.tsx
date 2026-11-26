@@ -10,7 +10,7 @@ const firstName = (name: string) => name.split(/\s+/)[0] ?? name;
  * The research is the background; the product is the conversation. A prominent "ask them
  * anything" box with suggested questions: sending one opens a conversation with it already asked.
  */
-export function TalkPrompt({ data, onAsk }: { data: PersonaData; onAsk: (question?: string) => void }) {
+export function TalkPrompt({ data, onAsk, onEdit }: { data: PersonaData; onAsk: (question?: string) => void; onEdit?: () => void }) {
   const [text, setText] = useState("");
   const name = data.persona.icp?.anchor_name ?? data.persona.name;
   const suggestions = (data.persona.icp?.research_questions ?? []).slice(0, 3);
@@ -53,6 +53,15 @@ export function TalkPrompt({ data, onAsk }: { data: PersonaData; onAsk: (questio
             </button>
           ))}
         </div>
+      )}
+      {onEdit && (
+        <p className="mt-4 border-t border-zinc-300/60 pt-3 text-sm text-zinc-600 dark:border-zinc-700/60 dark:text-zinc-400">
+          Want {firstName(name)} to know more, or something different?{" "}
+          <button onClick={onEdit} className="font-medium text-zinc-900 underline underline-offset-2 dark:text-zinc-100">
+            Edit the persona in a short chat
+          </button>
+          : add questions, a topic or newer material, and Claude researches it into a new version.
+        </p>
       )}
     </section>
   );
@@ -132,7 +141,7 @@ export function TalkIntro({ data, onAsk }: { data: PersonaData; onAsk: () => voi
         <p className="mt-4 text-sm leading-6 text-zinc-700 dark:text-zinc-300">
           This page is the research behind the persona: what they said, the answers we found, and the people you could call. The real value is
           the conversation: ask {firstName(name)} anything, push back, ask why. Every answer shows the quotes it rests on, and says when it&apos;s
-          only an educated guess.
+          only an educated guess. Missing something? Use Edit to tell Claude what to research next.
         </p>
         <div className="mt-5 flex flex-col gap-2 sm:flex-row-reverse">
           <button

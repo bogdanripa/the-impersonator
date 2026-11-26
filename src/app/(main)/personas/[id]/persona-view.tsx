@@ -77,9 +77,15 @@ export default function PersonaView() {
   const { persona } = data;
   const ready = persona.version > 0;
   const busy = RUNNING.includes(persona.status);
+  // A researched persona is edited in a short chat: what to change, then Claude researches it again.
+  const canEdit = ready && data.deepResearchEnabled && !busy && !updating;
+  const startEditing = () => {
+    setUpdating(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   const menu: MenuItem[] = [
-    ...(ready && data.deepResearchEnabled && !busy ? [{ label: "Update this persona…", onClick: () => setUpdating(true) }] : []),
+    ...(canEdit ? [{ label: "Edit this persona…", onClick: startEditing }] : []),
     ...(ready && !busy && persona.soulStatus !== "generating"
       ? [{ label: data.soul ? "Rewrite soul" : "Write soul", onClick: () => act(() => api(`/api/personas/${id}/soul`, { method: "POST" })) }]
       : []),
@@ -128,6 +134,15 @@ export default function PersonaView() {
               New conversation
             </button>
           )}
+          {canEdit && (
+            <button
+              onClick={startEditing}
+              title="Change what this persona knows, in a short chat"
+              className="rounded-full border border-zinc-300 px-4 py-2.5 text-sm font-medium dark:border-zinc-700"
+            >
+              Edit
+            </button>
+          )}
           <Menu items={menu} />
         </div>
       </div>
@@ -174,13 +189,13 @@ export default function PersonaView() {
         />
       )}
 
-      {ready && !updating && <TalkPrompt data={data} onAsk={newConversation} />}
+      {ready && !updating && <TalkPrompt data={data} onAsk={newConversation} onEdit={canEdit ? startEditing : undefined} />}
       {ready && !updating && <Conversations personaId={id} onNew={() => newConversation()} />}
       {ready && !updating && persona.status === "ready" && <TalkIntro data={data} onAsk={() => newConversation()} />}
       {ready && !updating && <TalkBar data={data} onAsk={() => newConversation()} />}
 
       {ready ? (
-        <Tabs data={data} act={act} personaId={id} />
+        <Tabs data={data} act={act} personaId={id} onEdit={canEdit ? startEditing : undefined} />
       ) : (
         persona.status !== "draft" && <Sources data={data} act={act} personaId={id} />
       )}
@@ -424,7 +439,9 @@ function Conversations({ personaId, onNew }: { personaId: string; onNew: () => v
 
 const TABS = ["Soul", "About", "Research questions", "People to talk to", "Profile", "Gaps", "Sources", "Setup"] as const;
 
-function Tabs({ data, act, personaId }: { data: PersonaData; act: (fn: () => Promise<unknown>) => void; personaId: string }) {
+function Tabs({
+  data, act, personaId, onEdit,
+}: { data: PersonaData; act: (fn: () => Promise<unknown>) => void; personaId: string; onEdit?: () => void }) {
   const [tab, setTab] = useState<(typeof TABS)[number]>(data.soul ? "Soul" : "About");
   const idx = useMemo(() => buildIndex(data), [data]);
   return (
@@ -458,7 +475,22 @@ function Tabs({ data, act, personaId }: { data: PersonaData; act: (fn: () => Pro
       {tab === "Profile" && <ProfileElements data={data} />}
       {tab === "Gaps" && <GapsView data={data} act={act} personaId={personaId} />}
       {tab === "Sources" && <Sources data={data} act={act} personaId={personaId} />}
-      {tab === "Setup" && data.persona.icp && <IcpCard icp={data.persona.icp} />}
+      {tab === "Setup" && data.persona.icp && (
+        <div className="space-y-3">
+          {onEdit && (
+            <div className="flex flex-col gap-3 rounded-xl border border-zinc-200 p-4 text-sm dark:border-zinc-800 sm:flex-row sm:items-center">
+              <p className="flex-1 text-zinc-600 dark:text-zinc-400">
+                This is what the research was asked to do. To change it (new questions, a topic to dig into, newer material, other peers),
+                say so in a short chat; Claude researches it and builds a new version. Existing conversations keep their version.
+              </p>
+              <button onClick={onEdit} className="shrink-0 rounded-full bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900">
+                Change it by chatting
+              </button>
+            </div>
+          )}
+          <IcpCard icp={data.persona.icp} />
+        </div>
+      )}
     </section>
   );
 }
@@ -548,7 +580,7 @@ function Builder({
   return (
     <section className="space-y-4">
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold">{isUpdate ? "Update this persona" : "Who do you want to talk to?"}</h2>
+        <h2 className="text-lg font-semibold">{isUpdate ? "Edit this persona" : "Who do you want to talk to?"}</h2>
         {onCancel && <Button variant="secondary" onClick={onCancel}>Cancel</Button>}
       </div>
       <div className="space-y-3">
