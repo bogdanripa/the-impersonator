@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api-client";
 
-type Me = { email: string; org: string; shared: boolean };
+type Me = { email: string; org: string; shared: boolean; admin?: boolean };
 
 /** Whose space this is (shared with a company domain, or private), and sign-out. */
 export function AccountMenu() {
@@ -36,6 +36,11 @@ export function AccountMenu() {
             <a href="/activity" className="mt-3 block w-full rounded border border-zinc-300 px-3 py-2 text-center dark:border-zinc-700">
               Activity log
             </a>
+            {me.admin && (
+              <a href="/activity?all=1" className="mt-2 block w-full rounded border border-zinc-300 px-3 py-2 text-center dark:border-zinc-700">
+                Admin: all workspaces
+              </a>
+            )}
             <form action="/api/auth/logout" method="post" className="mt-2">
               <button type="submit" className="w-full rounded border border-zinc-300 px-3 py-2 dark:border-zinc-700">
                 Sign out

@@ -5,8 +5,12 @@ import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api-client";
 
+type Workspace = {
+  org: string; personas: number; ready: number; conversations: number; messages: number;
+  events_7d: number; problems_7d: number; last_activity: string | null; people: number;
+};
 type Event = {
-  id: string; createdAt: string; kind: string; level: string; message: string; actor: string | null;
+  id: string; createdAt: string; org: string | null; kind: string; level: string; message: string; actor: string | null;
   personaId: string | null; conversationId: string | null; runId: string | null; durationMs: number | null;
   data: Record<string, unknown> | null;
 };
@@ -32,6 +36,10 @@ function duration(ms: number) {
 export default function ActivityView() {
   const params = useSearchParams();
   const persona = params.get("persona");
+  // Admins (ADMIN_EMAILS) can read every workspace's log; the API refuses everyone else.
+  const all = params.get("all") === "1";
+  const [org, setOrg] = useState<string | null>(null);
+  const [overview, setOverview] = useState<Workspace[] | null>(null);
   const [area, setArea] = useState("");
   const [problems, setProblems] = useState(false);
   const [events, setEvents] = useState<Event[] | null>(null);
@@ -44,17 +52,20 @@ export default function ActivityView() {
       if (area) q.set("area", area);
       if (problems) q.set("problems", "1");
       if (persona) q.set("persona", persona);
+      if (all) q.set("all", "1");
+      if (all && org) q.set("org", org);
       if (before) q.set("before", before);
-      return api<{ events: Event[] }>(`/api/events?${q}`);
+      return api<{ events: Event[]; overview?: Workspace[] }>(`/api/events?${q}`);
     },
-    [area, problems, persona],
+    [area, problems, persona, all, org],
   );
   useEffect(() => {
     let cancelled = false;
     query().then(
-      ({ events: rows }) => {
+      ({ events: rows, overview: ws }) => {
         if (cancelled) return;
         setEvents(rows);
+        if (ws) setOverview(ws);
         setMore(rows.length === 100);
       },
       (e) => !cancelled && setError((e as Error).message),
@@ -77,9 +88,15 @@ export default function ActivityView() {
     <div className="space-y-4">
       <Link href="/" className="text-xs text-zinc-500 hover:underline">← All personas</Link>
       <div>
-        <h1 className="text-xl font-semibold">Activity log</h1>
+        <h1 className="text-xl font-semibold">{all ? "Admin: all workspaces" : "Activity log"}</h1>
         <p className="mt-1 text-sm text-zinc-500">
-          What happened in your workspace: setup chats, research runs and the problems they hit, conversations, LinkedIn reads and errors.
+          {all ? "Every workspace's activity" : "What happened in your workspace"}: setup chats, research runs and the problems they hit,
+          conversations, LinkedIn reads and errors.
+          {all ? (
+            <>
+              {" "}<Link href="/activity" className="underline">Only my workspace</Link>.
+            </>
+          ) : null}
           {persona && (
             <>
               {" "}Showing one persona. <Link href="/activity" className="underline">Show everything</Link>.
@@ -87,6 +104,51 @@ export default function ActivityView() {
           )}
         </p>
       </div>
+      {all && overview && (
+        <div className="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+          <table className="w-full min-w-[640px] text-left text-sm">
+            <thead className="bg-zinc-100 text-xs text-zinc-500 dark:bg-zinc-900">
+              <tr>
+                {["Workspace", "Personas (ready)", "Conversations", "Messages", "People", "Events 7d", "Problems 7d", "Last activity"].map((h) => (
+                  <th key={h} className="px-3 py-2 font-medium">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+              {overview.map((w) => (
+                <tr
+                  key={w.org}
+                  onClick={() => setOrg(org === w.org ? null : w.org)}
+                  className={`cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-900 ${org === w.org ? "bg-zinc-100 dark:bg-zinc-900" : ""}`}
+                >
+                  <td className="px-3 py-2 font-medium [overflow-wrap:anywhere]">{w.org}</td>
+                  <td className="px-3 py-2">{w.personas} ({w.ready})</td>
+                  <td className="px-3 py-2">{w.conversations}</td>
+                  <td className="px-3 py-2">{w.messages}</td>
+                  <td className="px-3 py-2">{w.people}</td>
+                  <td className="px-3 py-2">{w.events_7d}</td>
+                  <td className={`px-3 py-2 ${w.problems_7d ? "text-amber-700 dark:text-amber-400" : ""}`}>{w.problems_7d}</td>
+                  <td className="px-3 py-2 text-xs text-zinc-500">{w.last_activity ? new Date(w.last_activity).toLocaleString() : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {all && (
+        <p className="text-xs text-zinc-500">
+          {org ? (
+            <>
+              Showing {org === "-" ? "system-wide events" : org}. <button onClick={() => setOrg(null)} className="underline">Show all workspaces</button>
+            </>
+          ) : (
+            <>
+              Tap a workspace to see only its events, or <button onClick={() => setOrg("-")} className="underline">system-wide events</button>{" "}
+              (refused research tokens, server errors, LinkedIn reads).
+            </>
+          )}
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex gap-1 overflow-x-auto">
           {AREAS.map(([v, label]) => (
@@ -125,9 +187,11 @@ export default function ActivityView() {
                 </summary>
                 <div className="mt-2 space-y-2 text-xs text-zinc-600 dark:text-zinc-400">
                   <div className="flex flex-wrap gap-x-3 gap-y-1">
+                    {all && <span className="font-medium">{e.org ?? "system"}</span>}
                     {e.actor && <span>by {e.actor}</span>}
-                    {e.personaId && <Link href={`/personas/${e.personaId}`} className="underline">persona</Link>}
-                    {e.conversationId && <Link href={`/chat/${e.conversationId}`} className="underline">conversation</Link>}
+                    {e.personaId && (all ? <span>persona {e.personaId.slice(0, 8)}</span> : <Link href={`/personas/${e.personaId}`} className="underline">persona</Link>)}
+                    {e.conversationId &&
+                      (all ? <span>conversation {e.conversationId.slice(0, 8)}</span> : <Link href={`/chat/${e.conversationId}`} className="underline">conversation</Link>)}
                     {e.runId && <span>run {e.runId.slice(0, 8)}</span>}
                   </div>
                   {e.data && (
