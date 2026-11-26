@@ -63,5 +63,7 @@ npm run seed -- seeds/personas.json
 
 1. Create the project and add Postgres (Neon) from the Vercel Marketplace; it sets `DATABASE_URL`.
 2. Set env vars: `OPENAI_PROVIDER`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `OPENAI_MODEL`,
-   `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `AUTH_SECRET`, `ORG_DOMAIN_ALIASES`, `APP_URL`.
+   `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `AUTH_SECRET`, `ORG_DOMAIN_ALIASES`, `APP_URL`, and
+   `APIFY_TOKEN` to read LinkedIn profiles and posts (Apify's HarvestAPI actors, roughly $4 per
+   1,000 profiles and $2 per 1,000 posts; each page is cached for 30 days).
 3. `npm run build` runs migrations before `next build`.

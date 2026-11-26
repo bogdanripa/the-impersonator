@@ -5,6 +5,7 @@ import { isIP } from "node:net";
 import { createHash } from "node:crypto";
 import { extractText, getDocumentProxy } from "unpdf";
 import { attachmentId, getAttachmentText } from "@/lib/attachments";
+import { fetchLinkedIn, linkedinReadable, linkedinTarget } from "@/lib/linkedin";
 
 const MAX_BYTES = 5 * 1024 * 1024;
 const MAX_PDF_BYTES = 40 * 1024 * 1024; // annual reports are large
@@ -13,7 +14,7 @@ const MAX_PDF_CHARS = 2_000_000;
 const MIN_CHARS = 1_500;
 const TIMEOUT_MS = 20_000;
 
-export type FetchedSource = { title: string | null; text: string; hash: string; via?: "direct" | "renderer" };
+export type FetchedSource = { title: string | null; text: string; hash: string; via?: "direct" | "renderer" | "linkedin" };
 
 function isPrivateAddress(ip: string): boolean {
   if (ip.includes(":")) {
@@ -167,11 +168,15 @@ async function renderPage(url: URL): Promise<{ title: string | null; text: strin
  * doesn't apply; we identify ourselves honestly instead. Pages that need JavaScript or that bot
  * protection turned away are read through a headless-browser reader. Login walls are respected.
  * Throws on anything we can't read in full, so no source is ever summarized from nothing.
- * `attachment:<id>` reads a file the team uploaded.
+ * `attachment:<id>` reads a file the team uploaded; LinkedIn profiles and posts are read through
+ * Apify (linkedin.ts) when APIFY_TOKEN is set.
  */
 export async function fetchSource(rawUrl: string): Promise<FetchedSource> {
   const uploaded = attachmentId(rawUrl);
   if (uploaded) return getAttachmentText(uploaded);
+  // LinkedIn profiles and posts are members-only: read through Apify when it's set up.
+  const linkedin = linkedinTarget(rawUrl);
+  if (linkedin && linkedinReadable()) return { ...(await fetchLinkedIn(linkedin)), via: "linkedin" };
 
   let url = await assertPublicUrl(rawUrl);
   if (MEMBERS_ONLY.test(url.hostname) && LOGIN_PATH.test(url.pathname)) throw new LoginWallError(url);

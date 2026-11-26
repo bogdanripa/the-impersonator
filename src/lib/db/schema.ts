@@ -413,3 +413,14 @@ export const attachments = pgTable("attachments", {
   uploadedBy: text("uploaded_by"),
   createdAt: createdAt(),
 });
+
+/**
+ * LinkedIn pages read through Apify (see linkedin.ts), keyed by canonical URL. The research routine
+ * and the verifier read the same cached text, and each page is paid for at most once a month.
+ */
+export const linkedinPages = pgTable("linkedin_pages", {
+  url: text("url").primaryKey(),
+  title: text("title"),
+  text: text("text").notNull(),
+  fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+});
