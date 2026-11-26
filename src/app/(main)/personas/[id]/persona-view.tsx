@@ -57,7 +57,10 @@ export default function PersonaView() {
       await fn();
       await load();
     } catch (e) {
-      setError((e as Error).message);
+      const message = (e as Error).message;
+      // A second tap on a start button: the first one already started it.
+      if (/already running/i.test(message)) await load().catch(() => null);
+      else setError(message);
     }
   }
 
@@ -260,46 +263,50 @@ function StatusBanner({ data, act, personaId }: { data: PersonaData; act: (fn: (
   const lastNote = log.length ? (now - new Date(log[log.length - 1].at).getTime()) / 60000 : null;
   return (
     <div className={`rounded-lg border px-3 py-2 text-sm ${tone}`}>
-    <div className="flex flex-wrap items-center gap-2">
-      {!stalled && <StatusPill status={persona.status} />}
-      {busy && !stalled && <span className="animate-pulse">●</span>}
-      <span className="min-w-0 flex-1">
-        {message}
+    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+      <div className="flex flex-wrap items-center gap-2 sm:contents">
+        {!stalled && <StatusPill status={persona.status} />}
+        {busy && !stalled && <span className="animate-pulse">●</span>}
         {runActive && lastNote != null && !stalled && (
-          <span className="ml-1 whitespace-nowrap text-xs text-zinc-500">
-            · last update {lastNote < 1 ? "just now" : `${Math.round(lastNote)} min ago`}
+          <span className="text-xs text-zinc-500 sm:order-last sm:basis-full">
+            Last update {lastNote < 1 ? "just now" : `${Math.round(lastNote)} min ago`}
           </span>
         )}
-      </span>
-      {run?.sessionUrl && (runActive || failed) && (
-        <a href={run.sessionUrl} target="_blank" rel="noreferrer noopener" className="underline">
-          {stalled ? "Check Claude's session" : "Watch Claude's session"}
-        </a>
-      )}
-      {(stalled || (runActive && busy)) && (
-        <>
-          {stalled && data.deepResearchEnabled && (
+      </div>
+      <span className="min-w-0 leading-6 [overflow-wrap:anywhere] sm:flex-1">{message}</span>
+      {(run?.sessionUrl && (runActive || failed)) || stalled || (runActive && busy) ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {run?.sessionUrl && (runActive || failed) && (
+            <a href={run.sessionUrl} target="_blank" rel="noreferrer noopener" className="py-1 underline">
+              {stalled ? "Check Claude's session" : "Watch Claude's session"}
+            </a>
+          )}
+        {(stalled || (runActive && busy)) && (
+          <>
+            {stalled && data.deepResearchEnabled && (
+              <Button
+                onClick={() =>
+                  act(async () => {
+                    await api(`/api/personas/${personaId}/deep-research/cancel`, { method: "POST" });
+                    await api(`/api/personas/${personaId}/deep-research`, { method: "POST" });
+                  })
+                }
+              >
+                Retry
+              </Button>
+            )}
             <Button
+              variant="secondary"
               onClick={() =>
-                act(async () => {
-                  await api(`/api/personas/${personaId}/deep-research/cancel`, { method: "POST" });
-                  await api(`/api/personas/${personaId}/deep-research`, { method: "POST" });
-                })
+                confirm("Cancel this research run?") && act(() => api(`/api/personas/${personaId}/deep-research/cancel`, { method: "POST" }))
               }
             >
-              Retry
+              Cancel
             </Button>
-          )}
-          <Button
-            variant="secondary"
-            onClick={() =>
-              confirm("Cancel this research run?") && act(() => api(`/api/personas/${personaId}/deep-research/cancel`, { method: "POST" }))
-            }
-          >
-            Cancel
-          </Button>
-        </>
-      )}
+          </>
+        )}
+        </div>
+      ) : null}
     </div>
       {log.length > 1 && <RunLog log={log} />}
     </div>
@@ -465,13 +472,14 @@ function Builder({
 }: {
   data: PersonaData;
   onChange: () => Promise<void>;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<unknown>;
   onCancel?: () => void;
   mode?: "create" | "update";
 }) {
   const [text, setText] = useState("");
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
   const isUpdate = mode === "update";
   const icp = isUpdate ? data.persona.pendingIcp : data.persona.icp;
   const [files, setFiles] = useState<{ id: string; filename: string; url: string }[]>([]);
@@ -629,8 +637,21 @@ function Builder({
               ? "Claude will research them exhaustively: their own interviews and writing, company material and peers. It can take a while; you can leave this page."
               : "Next, I'll search for their interviews, company material and peers."}
           </p>
-          <Button onClick={onConfirm} disabled={!!pending || (isUpdate && !data.deepResearchEnabled)}>
-            {isUpdate ? "Confirm & update with Claude" : data.deepResearchEnabled ? "Confirm & research with Claude" : "Confirm & find sources"}
+          <Button
+            onClick={() => {
+              setConfirming(true);
+              // On success the setup chat is replaced by the research status; on failure, try again.
+              Promise.resolve(onConfirm()).finally(() => setConfirming(false));
+            }}
+            disabled={confirming || !!pending || (isUpdate && !data.deepResearchEnabled)}
+          >
+            {confirming
+              ? "Starting…"
+              : isUpdate
+                ? "Confirm & update with Claude"
+                : data.deepResearchEnabled
+                  ? "Confirm & research with Claude"
+                  : "Confirm & find sources"}
           </Button>
         </div>
       )}
