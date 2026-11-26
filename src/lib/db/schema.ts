@@ -466,3 +466,21 @@ export const appEvents = pgTable(
   },
   (t) => [index("app_events_org_created").on(t.org, t.createdAt), index("app_events_persona").on(t.personaId)],
 );
+
+/**
+ * Sources the research routine reports while it works ("found, not yet checked"), shown live on the
+ * persona page. The verified sources replace them when the run is submitted and imported.
+ */
+export const runFindings = pgTable(
+  "run_findings",
+  {
+    id: id(),
+    runId: uuid("run_id").notNull().references(() => researchRuns.id, { onDelete: "cascade" }),
+    url: text("url").notNull(),
+    tier: text("tier").notNull(), // anchor | company | peer
+    title: text("title"),
+    subjectName: text("subject_name"),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("run_findings_run_url").on(t.runId, t.url)],
+);

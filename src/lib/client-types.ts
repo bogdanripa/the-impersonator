@@ -42,6 +42,8 @@ export type PersonaData = {
   } | null;
   /** What the research routine reported for the latest run (progress notes, problems, milestones). */
   runLog?: { at: string; kind: string; level: string; message: string }[];
+  /** Sources Claude reported while the run is in progress: found, not yet checked. */
+  runFindings?: { url: string; tier: string; title: string | null; subjectName: string | null }[];
   deepResearchEnabled: boolean;
   soul: { sections: SoulSection[]; sheet: SoulSheet } | null;
 };

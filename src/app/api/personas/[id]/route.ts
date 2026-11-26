@@ -53,6 +53,15 @@ export async function GET(request: Request, ctx: RouteContext<"/api/personas/[id
     ]);
 
     const run = await latestRun(id);
+    // Sources Claude reported while working, until the verified ones replace them.
+    const runFindings =
+      run && ["requested", "researching", "verifying"].includes(run.status)
+        ? await db
+            .select({ url: schema.runFindings.url, tier: schema.runFindings.tier, title: schema.runFindings.title, subjectName: schema.runFindings.subjectName })
+            .from(schema.runFindings)
+            .where(eq(schema.runFindings.runId, run.id))
+            .orderBy(asc(schema.runFindings.createdAt))
+        : [];
     // Everything the research routine reported for this run, oldest first.
     const runLog = run
       ? await db
@@ -76,6 +85,7 @@ export async function GET(request: Request, ctx: RouteContext<"/api/personas/[id
           }
         : null,
       runLog,
+      runFindings,
       soul: soul ? { sections: soul.sections, sheet: soul.sheet } : null,
       deepResearchEnabled: !!(process.env.CLAUDE_ROUTINE_FIRE_URL && process.env.CLAUDE_ROUTINE_TOKEN),
     });

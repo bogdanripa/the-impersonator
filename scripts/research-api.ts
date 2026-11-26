@@ -4,6 +4,8 @@
  *   npm run research-api -- context  <run_id>                  → writes seeds/run-<run_id>.context.json
  *   npm run research-api -- progress <run_id> "<message>"
  *   npm run research-api -- problem  <run_id> "<what went wrong>"   → logged for the team, not shown as progress
+ *   npm run research-api -- found    <run_id> <anchor|company|peer> <url> ["<title>"] ["<subject name>"]
+ *                                    → shown live on the persona page as "found, not yet checked"
  *   npm run research-api -- submit   <run_id> <seed-file.json>
  *
  * The app URL comes from RESEARCH_APP_URL (set in the routine's environment), never from the
@@ -30,7 +32,7 @@ async function call(path: string, init?: { method?: string; body?: unknown }) {
 async function main() {
   const [cmd, runId, arg] = process.argv.slice(2);
   if (!cmd || !runId || !/^[0-9a-f-]{36}$/.test(runId)) {
-    throw new Error("Usage: research-api <context|progress|problem|submit> <run_id> [message|file]");
+    throw new Error("Usage: research-api <context|progress|problem|found|submit> <run_id> [message|file|tier url title subject]");
   }
   if (cmd === "context") {
     const ctx = await call(`/api/research/runs/${runId}`);
@@ -46,6 +48,11 @@ async function main() {
     if (!arg) throw new Error("problem needs a message");
     await call(`/api/research/runs/${runId}/progress`, { method: "POST", body: { message: arg, kind: "problem" } });
     console.log("logged");
+  } else if (cmd === "found") {
+    const [tier, url, title, subject] = process.argv.slice(4);
+    if (!tier || !url) throw new Error("found needs: <anchor|company|peer> <url> [title] [subject name]");
+    const res = await call(`/api/research/runs/${runId}/found`, { method: "POST", body: { sources: [{ tier, url, title, subject }] } });
+    console.log(res.ignored ? `not recorded (${res.ignored})` : "ok");
   } else if (cmd === "submit") {
     if (!arg) throw new Error("submit needs a seed file");
     const raw = JSON.parse(readFileSync(arg, "utf8"));

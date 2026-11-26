@@ -881,14 +881,36 @@ function Sources({ data, act, personaId }: { data: PersonaData; act: (fn: () => 
       )}
       {tiers.map(([t, label]) => {
         const rows = data.sources.filter((s) => s.tier === t);
+        // While Claude researches: what it has found so far, before the app checks it.
+        const found = (data.runFindings ?? []).filter((f) => f.tier === t && !rows.some((r) => r.url === f.url));
+        const researching = RUNNING.includes(data.persona.status) && !!data.researchRun;
         return (
           <div key={t}>
             <h3 className="mb-2 flex items-center gap-2 text-sm font-medium">
-              <TierBadge tier={t} /> {label} <span className="text-zinc-500">({rows.length})</span>
+              <TierBadge tier={t} /> {label} <span className="text-zinc-500">({rows.length}{found.length ? ` + ${found.length} found` : ""})</span>
             </h3>
-            {rows.length === 0 && <p className="text-sm text-zinc-500">None yet.</p>}
+            {rows.length === 0 && found.length === 0 && (
+              <p className="text-sm text-zinc-500">
+                {researching ? "Claude is collecting sources. They appear here once they're checked, at the end of the research." : "None yet."}
+              </p>
+            )}
             <ul className="space-y-2">
               {rows.map((s) => <SourceRow key={s.id} s={s} act={act} editable={editable} />)}
+              {found.map((f) => (
+                <li key={f.url} className="rounded border border-dashed border-zinc-300 p-3 text-sm dark:border-zinc-700">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <a href={attachmentHref(f.url)} target="_blank" rel="noreferrer noopener" className="font-medium underline [overflow-wrap:anywhere]">
+                        {f.title ?? f.url}
+                      </a>
+                      {f.subjectName && <div className="text-xs text-zinc-500">{f.subjectName}</div>}
+                    </div>
+                    <span className="shrink-0 rounded-full bg-zinc-200 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+                      Found, not yet checked
+                    </span>
+                  </div>
+                </li>
+              ))}
             </ul>
           </div>
         );
