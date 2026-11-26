@@ -1,6 +1,7 @@
 import {
   type AnyPgColumn,
   boolean,
+  doublePrecision,
   index,
   integer,
   jsonb,
@@ -423,4 +424,21 @@ export const linkedinPages = pgTable("linkedin_pages", {
   title: text("title"),
   text: text("text").notNull(),
   fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+  /** Set while a request is scraping this page, so others wait for it instead of paying again. */
+  pendingSince: timestamp("pending_since", { withTimezone: true }),
 });
+
+/** Every Apify call, with its estimated cost: the monthly LinkedIn budget is checked against this. */
+export const linkedinScrapes = pgTable(
+  "linkedin_scrapes",
+  {
+    id: id(),
+    url: text("url").notNull(),
+    actor: text("actor").notNull(),
+    items: integer("items").notNull(),
+    costUsd: doublePrecision("cost_usd").notNull(),
+    ok: boolean("ok").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("linkedin_scrapes_created").on(t.createdAt)],
+);

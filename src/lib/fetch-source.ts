@@ -169,14 +169,16 @@ async function renderPage(url: URL): Promise<{ title: string | null; text: strin
  * protection turned away are read through a headless-browser reader. Login walls are respected.
  * Throws on anything we can't read in full, so no source is ever summarized from nothing.
  * `attachment:<id>` reads a file the team uploaded; LinkedIn profiles and posts are read through
- * Apify (linkedin.ts) when APIFY_TOKEN is set.
+ * Apify (linkedin.ts) when APIFY_TOKEN is set; `linkedinCacheOnly` never pays for a new scrape.
  */
-export async function fetchSource(rawUrl: string): Promise<FetchedSource> {
+export async function fetchSource(rawUrl: string, opts: { linkedinCacheOnly?: boolean } = {}): Promise<FetchedSource> {
   const uploaded = attachmentId(rawUrl);
   if (uploaded) return getAttachmentText(uploaded);
   // LinkedIn profiles and posts are members-only: read through Apify when it's set up.
   const linkedin = linkedinTarget(rawUrl);
-  if (linkedin && linkedinReadable()) return { ...(await fetchLinkedIn(linkedin)), via: "linkedin" };
+  if (linkedin && linkedinReadable()) {
+    return { ...(await fetchLinkedIn(linkedin, { cacheOnly: opts.linkedinCacheOnly })), via: "linkedin" };
+  }
 
   let url = await assertPublicUrl(rawUrl);
   if (MEMBERS_ONLY.test(url.hostname) && LOGIN_PATH.test(url.pathname)) throw new LoginWallError(url);

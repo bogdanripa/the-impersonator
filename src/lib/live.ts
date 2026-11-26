@@ -32,7 +32,7 @@ export async function liveLookup(conversationId: string, icp: Icp, query: string
 
   // 2. Fetch them ourselves.
   const pages = (
-    await Promise.all(urls.map((url) => fetchSource(url).then((p) => ({ url, ...p })).catch(() => null)))
+    await Promise.all(urls.map((url) => fetchSource(url, { linkedinCacheOnly: true }).then((p) => ({ url, ...p })).catch(() => null)))
   ).filter((p): p is NonNullable<typeof p> => !!p);
   if (!pages.length) return [];
 
