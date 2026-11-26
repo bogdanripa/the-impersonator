@@ -170,15 +170,32 @@ export default function ChatView() {
     };
   }, [load]);
 
-  // Scroll only the conversation pane (never the window) to the newest message: instantly when
-  // the conversation opens, smoothly as new messages arrive.
+  // Follow the conversation only when the reader is at the bottom: always when it opens and when
+  // they send a message, otherwise only if they haven't scrolled up to read. Polling while a reply
+  // is written returns the same messages every few seconds, so this keys on what actually changed.
   const opened = useRef(false);
-  useEffect(() => {
+  /** Messages there were when the reader scrolled up; null while they're at the bottom. */
+  const [readingFrom, setReadingFrom] = useState<number | null>(null);
+  const lastId = messages.at(-1)?.id;
+  /** Until when scroll events come from our own scrolling, not the reader (Safari reports mid-animation positions). */
+  const autoScrollUntil = useRef(0);
+  const scrollToEnd = useCallback((smooth: boolean) => {
     const el = scroller.current;
     if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: opened.current ? "smooth" : "instant" });
-    opened.current = true;
-  }, [messages, sending, thinking, persona, conversation?.replyStatus]);
+    autoScrollUntil.current = Date.now() + 1000;
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "instant" });
+    nearBottom.current = true;
+  }, []);
+  useEffect(() => {
+    if (!scroller.current || !persona) return;
+    if (!opened.current) {
+      opened.current = true;
+      scrollToEnd(false);
+    } else if (sending || nearBottom.current) {
+      scrollToEnd(true); // they just asked something, or they're following along
+    }
+  }, [lastId, messages.length, sending, thinking, persona, conversation?.replyStatus, scrollToEnd]);
+  const unseen = readingFrom !== null && messages.length > readingFrom;
 
   // When the keyboard opens or closes, keep the latest message in view.
   useVisualViewport(() => {
@@ -407,7 +424,12 @@ export default function ChatView() {
         ref={scroller}
         onScroll={(e) => {
           const el = e.currentTarget;
-          nearBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+          const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+          if (!atBottom && Date.now() < autoScrollUntil.current) return; // our own smooth scroll, still moving
+          nearBottom.current = atBottom;
+          if (nearBottom.current) {
+            if (readingFrom !== null) setReadingFrom(null);
+          } else if (readingFrom === null) setReadingFrom(messages.length);
         }}
         className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain print:block print:overflow-visible"
       >
@@ -484,6 +506,20 @@ export default function ChatView() {
           )}
         </div>
       </main>
+
+      {unseen && (
+        <div className="pointer-events-none relative print:hidden">
+          <button
+            onClick={() => {
+              scrollToEnd(true);
+              setReadingFrom(null);
+            }}
+            className="pointer-events-auto absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-zinc-900 px-4 py-2 text-sm font-medium text-white shadow-lg dark:bg-zinc-100 dark:text-zinc-900"
+          >
+            ↓ New message
+          </button>
+        </div>
+      )}
 
       {/* Composer */}
       <footer className="shrink-0 border-t border-zinc-200 pb-[env(safe-area-inset-bottom)] dark:border-zinc-800 print:hidden">
