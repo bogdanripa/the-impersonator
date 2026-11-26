@@ -135,8 +135,35 @@ export async function builderTurn(
   }
   checkResponse(response);
   const reply =
-    response.output_text.trim() ||
+    finalReplyText(response.output) ||
     (icp ? "Here's who I'd simulate and who I'd use as peers. Confirm it, or tell me what to change." : "");
   messages.push({ role: "assistant", content: reply, ...(icp ? { icp } : {}) });
   return { messages, reply, icp };
+}
+
+/**
+ * The model's final message. `output_text` joins every message in a turn, and when the model writes
+ * a reply, searches the web, then writes it again, the user would see it twice.
+ */
+export function finalReplyText(output: readonly { type: string }[]): string {
+  const messages = output.filter(
+    (o): o is { type: "message"; content: { type: string; text?: string }[] } => o.type === "message",
+  );
+  const last = messages.at(-1);
+  const text = (last?.content ?? [])
+    .map((c) => (c.type === "output_text" ? (c.text ?? "") : ""))
+    .join("")
+    .trim();
+  return collapseRepeat(text);
+}
+
+/** "AB" where the second half repeats the first exactly ("…audits?Got it — …audits?") → "A". */
+function collapseRepeat(text: string): string {
+  const t = text.trim();
+  for (let i = Math.floor(t.length / 2) - 2; i <= Math.ceil(t.length / 2) + 2; i++) {
+    if (i <= 0 || i >= t.length) continue;
+    const a = t.slice(0, i).trim();
+    if (a.length > 20 && a === t.slice(i).trim()) return a;
+  }
+  return t;
 }
