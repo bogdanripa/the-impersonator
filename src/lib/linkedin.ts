@@ -127,6 +127,8 @@ type Post = {
   id?: string; linkedinUrl?: string; content?: string | null; type?: string;
   author?: { publicIdentifier?: string | null; name?: string | null; info?: string | null; linkedinUrl?: string | null } | null;
   postedAt?: { date?: string | null } | null;
+  /** On a quote post: the post being shared (someone else's). `content` holds only their own comment. */
+  repost?: { author?: { name?: string | null } | null } | null;
 };
 
 const when = (d: DateParts) => d?.text || [d?.month, d?.year].filter(Boolean).join(" ") || "";
@@ -142,7 +144,8 @@ async function scrapeProfile(slug: string) {
   const [p] = await runActor<Profile>(PROFILE_ACTOR, { urls: [`https://www.linkedin.com/in/${slug}/`] }, 1);
   if (!p || p.error || !(p.firstName || p.lastName)) throw new Error("LinkedIn profile not found or not public");
   const name = clean(`${p.firstName ?? ""} ${p.lastName ?? ""}`);
-  const lines = [`${name} | LinkedIn profile`];
+  // The first line names them with their headline: a sentence the verifier can use as identity quote.
+  const lines = [`LinkedIn profile of ${name}${p.headline ? `, ${clean(p.headline)}` : ""}`];
   if (p.headline) lines.push(`Headline: ${clean(p.headline)}`);
   const current = (p.currentPosition ?? []).map((c) => clean([c.position, c.companyName].filter(Boolean).join(" at "))).filter(Boolean);
   if (current.length) lines.push(`Current position: ${current.join("; ")}`);
@@ -169,15 +172,22 @@ async function ownPosts(slug: string): Promise<Post[]> {
     { targetUrls: [`https://www.linkedin.com/in/${slug}/`], maxPosts: MAX_POSTS, includeReposts: false, includeQuotePosts: true, scrapeReactions: false, scrapeComments: false },
     MAX_POSTS,
   );
-  return items.filter((p) => {
-    const author = (p.author?.publicIdentifier ?? p.author?.linkedinUrl ?? "").toLowerCase();
-    return clean(p.content) && (!p.type || p.type === "post") && author.includes(slug);
-  });
+  return items
+    .filter((p) => {
+      const author = (p.author?.publicIdentifier ?? p.author?.linkedinUrl ?? "").toLowerCase();
+      return clean(p.content) && (!p.type || p.type === "post") && author.includes(slug);
+    })
+    .sort((a, b) => (b.postedAt?.date ?? "").localeCompare(a.postedAt?.date ?? ""));
 }
 
 function postBlock(p: Post) {
   const date = p.postedAt?.date ? p.postedAt.date.slice(0, 10) : "";
-  return [`Post${date ? ` (${date})` : ""}${p.linkedinUrl ? `: ${p.linkedinUrl}` : ""}`, clean(p.content)].join("\n");
+  const shared = clean(p.repost?.author?.name);
+  return [
+    `Post${date ? ` (${date})` : ""}${p.linkedinUrl ? `: ${p.linkedinUrl}` : ""}`,
+    ...(shared ? [`(Their comment when sharing a post by ${shared}; the shared post isn't included.)`] : []),
+    clean(p.content),
+  ].join("\n");
 }
 
 function postsHeader(posts: Post[], slug: string) {
